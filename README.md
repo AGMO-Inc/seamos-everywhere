@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/Agriman.png" alt="Agriman" width="120" />
+<img src="assets/Agriman_2.png" alt="Agriman" width="120" />
 
 # seamos-everywhere
 
