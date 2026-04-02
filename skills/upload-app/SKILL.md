@@ -1,6 +1,9 @@
 ---
 name: upload-app
 description: Upload a SeamOS app (.fif) to the SDM marketplace. Use this skill whenever the user wants to publish, upload, deploy, or register an app to the marketplace. Triggers on "앱 업로드", "앱 등록", "마켓플레이스에 올려", "upload app", "publish app", "deploy app", "앱 배포". Also use when the user has a .fif file and wants to get it onto the SDM marketplace, even if they don't say "upload" explicitly.
+user-invocable: true
+allowed-tools: Read, Glob, Grep, Bash, Write, Edit
+argument-hint: "[--dry-run]"
 ---
 
 # Upload App to SDM Marketplace

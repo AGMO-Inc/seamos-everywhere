@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "sdm-marketplace": {
+      "type": "http",
+      "url": "${user_config.sdm_api_url}/mcp",
+      "headers": {
+        "X-API-Key": "${user_config.sdm_api_key}"
+      }
+    }
+  }
+}

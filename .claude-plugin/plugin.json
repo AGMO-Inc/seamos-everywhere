@@ -1,0 +1,22 @@
+{
+  "name": "seamos-everywhere",
+  "description": "SeamOS AI Native developer plugin — build, test, and deploy agricultural machinery apps using natural language through Claude Code",
+  "version": "0.1.0",
+  "author": {
+    "name": "AGMO-Inc"
+  },
+  "repository": "https://github.com/AGMO-Inc/seamos-everywhere",
+  "license": "MIT",
+  "skills": "./skills/",
+  "mcpServers": "./mcp-servers.json",
+  "userConfig": {
+    "sdm_api_key": {
+      "description": "SDM Marketplace API Key (APP_DEPLOY scope)",
+      "sensitive": true
+    },
+    "sdm_api_url": {
+      "description": "SDM API base URL (e.g. https://marketplace-api.seamos.io)",
+      "sensitive": false
+    }
+  }
+}

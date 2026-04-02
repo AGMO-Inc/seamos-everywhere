@@ -1,0 +1,19 @@
+{
+  "name": "seamos-plugins",
+  "owner": {
+    "name": "AGMO-Inc",
+    "email": "dev@agmo.co.kr"
+  },
+  "plugins": [
+    {
+      "name": "seamos-everywhere",
+      "source": ".",
+      "description": "SeamOS AI Native developer plugin — build, test, and deploy agricultural machinery apps using natural language through Claude Code",
+      "version": "0.1.0",
+      "author": {
+        "name": "AGMO-Inc"
+      },
+      "keywords": ["seamos", "agriculture", "marketplace", "iot", "fif"]
+    }
+  ]
+}
