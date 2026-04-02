@@ -38,7 +38,11 @@ Read `.mcp.json` from project root. Extract:
 - `X-API-Key` from `mcpServers.sdm-marketplace.headers.X-API-Key`
 
 **C. List user's apps:**
-Call `list_apps` MCP tool (`mcp__sdm-marketplace__list_apps`). This returns all apps owned by the authenticated user with appId, appName, and status.
+Call `list_apps` MCP tool (`mcp__sdm-marketplace__list_apps`). This returns two groups:
+- `personalApps` — apps owned by the user directly
+- `organizationApps` — apps belonging to the user's organization (may be empty if user has no org)
+
+Each entry has `appId`, `appName`, and `status`.
 
 **D. Scan builds directory:**
 Scan `seamos-assets/builds/` for `.fif` files.
@@ -55,18 +59,27 @@ After initialization completes:
 
 **If the user provided an appId** (via argument or in their message) → use it directly.
 
-**If not** → present the app list from Step 1C:
+**If not** → present the app list from Step 1C, grouped by ownership:
 
 ```
 ## 업데이트할 앱을 선택해주세요
 
+### 내 앱
 | # | App ID | 이름 | 상태 |
 |---|--------|------|------|
 | 1 | 10250  | Test App | RELEASED |
 | 2 | 10249  | 스킬 테스트 | RELEASED |
 
+### 조직 앱
+| # | App ID | 이름 | 상태 |
+|---|--------|------|------|
+| 3 | 10252  | 스킬테스트3 | RELEASED |
+| 4 | 150    | AGMO Solution | RELEASED |
+
 번호 또는 App ID를 입력해주세요.
 ```
+
+If `organizationApps` is empty, skip the "조직 앱" section entirely and only show "내 앱". Number the rows sequentially across both sections so the user can pick by number.
 
 **Wait for user response.** Do not proceed until the user selects an app.
 
