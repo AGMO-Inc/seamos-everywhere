@@ -106,11 +106,11 @@ When `config.json` doesn't exist yet:
    - `boolean` → `false`
    - `array` → `[]` (with one template item if `itemSchema` exists)
    - Nested `itemSchema` → recurse and generate defaults for inner fields
-   - **Enum options in value** — if a field has enum values, list all options separated by ` | ` as the default value. Example: `"category": "CONSTRUCTION | AGRICULTURE | DRONE | ENTERTAINMENT | DIAGNOSTICS | MATERIALS"`. The user picks one and deletes the rest. When validating in Step 3B, treat any value still containing ` | ` as unfilled.
+   - **Enum fields** — if a field has enum values, set the default to `""` (empty string). The available options will be listed in the field guide (Step 3A-5) so the user knows what to choose.
    - **Example values from schema** — for non-enum fields, if the schema provides an `example` value, use it as the default. Example: `"email": "sksjsksh22@gmail.com"`, `"feuType": "AUTO-IT_RV-C1000, RCU4-3Q/20, RCU4-3X/10"`. This lets users see the expected format and replace with their own values.
 3. **Fallback** — if Step 1A failed (MCP server unreachable), read the static template from `skills/upload-app/references/config-template.json` instead.
 4. **Write** the generated JSON to `seamos-assets/config.json`
-5. **Show field guide** — list each field with its description, type, required/optional status, and enum values (if any) from the schema. Group by required first, then optional.
+5. **Show field guide** — list each field with its description, type, required/optional status, and enum values (if any) from the schema. Group by required first, then optional. For enum fields, prominently display all valid options (e.g., "Options: CONSTRUCTION, AGRICULTURE, DRONE, ENTERTAINMENT, DIAGNOSTICS, MATERIALS") so the user can pick the correct value.
 6. **STOP here** — do not proceed to upload. The user needs to fill in the config first.
 
 ### Step 3B: Schema Diff & Validation
@@ -201,9 +201,8 @@ The `--request` JSON is built from config.json fields, mapped to the API schema 
 
 ## Important Notes
 
-- **API Key Masking**: When displaying any output to the user (summaries, logs, debug info), ALWAYS mask the API key. Show only the first 6 characters followed by `***` (e.g., `sdm_ak_***`). The only place the full API key should appear is inside the actual curl execution within `upload.sh` — never in user-facing text. This applies to Step 1 (config parsing report), Step 4 (command preview), and Step 5 (result report).
-- NEVER hardcode API keys in commands shown to the user. Always read from .mcp.json at runtime.
-- The feuType part name in the multipart request MUST exactly match the feuType in the variants JSON.
-- All file paths should be relative to the project root for portability.
+For shared rules (API key masking, feuType matching, file path conventions), see `skills/shared-references/sdm-common-rules.md`.
+
+**Upload-app specific rules:**
 - When generating the config template, use the MCP schema from `create_app` to ensure field names match the API exactly. The template must include ALL fields from the schema — both required and optional — with appropriate default values (empty string for strings, 0 for numbers, false for booleans, empty array for arrays). Users should see every available option upfront so they can fill in what they need without guessing what fields exist.
 - The feuType MUST be explicitly specified by the user in config.json. Do NOT guess or derive it from the .fif filename — feuType is a server-registered value (e.g., `AUTO-IT_RV-C1000`) that may not match the filename.

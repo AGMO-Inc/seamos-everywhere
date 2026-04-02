@@ -38,20 +38,9 @@ All tools are from the `sdm-marketplace-local` server:
 
 ## Context Caching
 
-This skill uses `.seamos-context.json` at the workspace root to remember the last-used device and app, reducing repetitive selection across sessions.
+This skill uses `.seamos-context.json` for device and app selection caching. For cache structure and shared ownership rules, see `skills/shared-references/seamos-context-cache.md`.
 
-**Cache file structure:**
-```json
-{
-  "deviceId": "42",
-  "deviceName": "RV-C1000 (SN: SN-001)",
-  "appId": "10250",
-  "appName": "Test App",
-  "updatedAt": "2026-04-02T10:30:00Z"
-}
-```
-
-This file is shared with the `update-app` skill. Changes made by either skill update the same cache.
+This skill reads/writes all fields (`deviceId`, `deviceName`, `appId`, `appName`, `updatedAt`) and overwrites the entire cache after any successful action.
 
 ## Execution Flow
 
@@ -59,7 +48,11 @@ This file is shared with the `update-app` skill. Changes made by either skill up
 
 Call `list_devices` to get the user's device list. This is always needed regardless of the action.
 
-If the user already specified a device (by ID, name, or serial number) and an action in their message, skip ahead to the relevant step.
+**Shortcut path:** If the user provides enough context upfront (e.g., "디바이스 42에 앱 10250 설치해줘"), parse device ID, app ID, and action from the message. Verify the device is online via `list_devices`, then skip directly to Step 5 (Confirm and Execute). If the device is offline, inform the user and fall through to Step 2 for alternative selection.
+
+**Simple queries:** For read-only queries like "내 디바이스 보여줘" or "설치된 앱 확인", call the relevant MCP tool and display the result directly — no need for the full workflow.
+
+If the user didn't specify a device or action, proceed to Step 2.
 
 ### Step 2: Device Selection
 
@@ -191,24 +184,7 @@ Show installed apps:
 
 ### Step 5: Confirm and Execute
 
-Before showing the confirmation, verify the selected device is online. If the device status was `offline` in the `list_devices` response, block the action:
-
-```
-## ⚠️ 디바이스 오프라인
-
-선택하신 디바이스 RV-C1000 (ID: 42)이 현재 오프라인 상태입니다.
-오프라인 상태에서는 앱 설치/업데이트/삭제를 진행할 수 없습니다.
-
-다른 온라인 디바이스를 선택해주세요:
-
-| # | Device ID | 모델명 | 시리얼 번호 | 상태 |
-|---|-----------|--------|------------|------|
-| 1 | 43        | RCU4-3Q  | SN-002   | 🟢 온라인 |
-```
-
-Then wait for the user to select a different device and restart from Step 3.
-
-If the device is online, show a summary and ask for confirmation:
+Show a summary and ask for confirmation:
 
 ```
 ## 작업 확인
@@ -264,27 +240,9 @@ If polling times out (5 attempts without COMPLETED), inform the user:
 
 ### Cache Update
 
-After any successful action (install, update, or uninstall), save the selected device and app to `.seamos-context.json` at the workspace root:
+After any successful action (install, update, or uninstall), update `.seamos-context.json` with the selected device and app info. See `skills/shared-references/seamos-context-cache.md` for the exact structure and write rules.
 
-```json
-{
-  "deviceId": "{selected deviceId}",
-  "deviceName": "{selected device model} (SN: {serial})",
-  "appId": "{selected appId}",
-  "appName": "{selected app name}",
-  "updatedAt": "{ISO 8601 timestamp}"
-}
-```
-
-Write this file using the Write tool. If the file already exists, overwrite it entirely. This ensures the next skill invocation (whether `manage-device-app` or `update-app`) can reuse the selection.
-
-**Note on uninstall:** Even after uninstalling an app, still cache the appId — the user may want to reinstall it or manage the same app on a different device next time.
-
-## Shortcut Handling
-
-If the user provides enough context upfront (e.g., "디바이스 42에 앱 10250 설치해줘"), skip the interactive selection steps and go straight to confirmation (Step 5). Parse device ID, app ID, and action from the user's message. However, still check the device's online status first — if it's offline, inform the user and suggest online alternatives instead of proceeding.
-
-Similarly, simple queries like "내 디바이스 보여줘" or "설치된 앱 확인" should just call the relevant MCP tool and display the result — no need to walk through the full workflow.
+**Note on uninstall:** Even after uninstalling, cache the appId — the user may want to reinstall or manage the same app on a different device.
 
 ## Error Handling
 

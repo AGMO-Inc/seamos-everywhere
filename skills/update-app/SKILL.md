@@ -27,41 +27,27 @@ This skill does NOT use config.json. All version info is collected interactively
 
 ## Context Caching
 
-This skill uses `.seamos-context.json` at the workspace root to remember the last-used app, reducing repetitive selection across sessions.
+This skill uses `.seamos-context.json` for app selection caching. For cache structure and shared ownership rules, see `skills/shared-references/seamos-context-cache.md`.
 
-**Cache file structure:**
-```json
-{
-  "deviceId": "42",
-  "deviceName": "RV-C1000 (SN: SN-001)",
-  "appId": "10250",
-  "appName": "Test App",
-  "updatedAt": "2026-04-02T10:30:00Z"
-}
-```
-
-This file is shared with the `manage-device-app` skill. This skill only reads/writes the `appId` and `appName` fields — it preserves `deviceId` and `deviceName` if they already exist.
+This skill only reads/writes `appId`, `appName`, and `updatedAt` — it preserves `deviceId` and `deviceName` if already present.
 
 ## Execution Flow
 
 ### Step 1: Parallel Initialization (do ALL in a single turn)
 
-**A. Get endpoint schema:**
-Call `update_app` MCP tool (`mcp__sdm-marketplace__update_app`) with a dummy appId (e.g., `1`). This returns the REST endpoint schema — the appId in the URL will be replaced later with the real one.
-
-**B. Parse MCP config:**
+**A. Parse MCP config:**
 Read `.mcp.json` from project root. Extract:
 - `url` from `mcpServers.sdm-marketplace.url` — strip `/mcp` suffix to get base URL (e.g., `http://localhost:8088`)
 - `X-API-Key` from `mcpServers.sdm-marketplace.headers.X-API-Key`
 
-**C. List user's apps:**
+**B. List user's apps:**
 Call `list_apps` MCP tool (`mcp__sdm-marketplace__list_apps`). This returns two groups:
 - `personalApps` — apps owned by the user directly
 - `organizationApps` — apps belonging to the user's organization (may be empty if user has no org)
 
 Each entry has `appId`, `appName`, and `status`.
 
-**D. Scan builds directory:**
+**C. Scan builds directory:**
 Scan `seamos-assets/builds/` for `.fif` files.
 
 ### Step 2: App Selection & Status
@@ -76,7 +62,7 @@ After initialization completes:
 
 **Cache check:** Before presenting the app list, read `.seamos-context.json` from the workspace root. If the file exists and contains `appId`:
 
-1. Verify the cached appId exists in the `list_apps` result from Step 1C
+1. Verify the cached appId exists in the `list_apps` result from Step 1B
 2. If found → show confirmation prompt:
    ```
    이전에 사용한 앱: {appName} (ID: {appId}) — 이대로 진행할까요? (Y/다른 앱 선택)
@@ -87,7 +73,7 @@ After initialization completes:
 
 **If the user provided an appId** (via argument or in their message) → use it directly.
 
-**If not** → present the app list from Step 1C, grouped by ownership:
+**If not** → present the app list from Step 1B, grouped by ownership:
 
 ```
 ## 업데이트할 앱을 선택해주세요
@@ -164,23 +150,16 @@ Enter를 누르면 1.0.1로 설정됩니다. 다른 버전을 원하시면 입�
 
 #### 3-3. Update Notes
 
-Ask for update title and description:
+Ask for update title and description in a single prompt:
 
 ```
 ## 업데이트 노트를 작성해주세요
 
-업데이트 제목: (예: "버그 수정", "신기능 추가")
+제목: (예: "버그 수정", "신기능 추가")
+설명: (예: "안정성을 개선했습니다.")
 ```
 
-**Wait for user response** (title).
-
-Then:
-
-```
-업데이트 설명: (예: "안정성을 개선했습니다.")
-```
-
-**Wait for user response** (description).
+**Wait for user response.**
 
 The locale is set to `ko` by default. If the app's info from get_app_status shows multiple locales, ask if the user wants to add additional locale entries.
 
@@ -211,7 +190,27 @@ Show full summary before proceeding:
 
 ### Step 5: Build and Execute
 
-Assemble the request JSON:
+The request JSON structure for update is fixed:
+```json
+{
+  "variants": [
+    {
+      "feuType": "{selected feuType}",
+      "version": "{new version}",
+      "isForTest": false,
+      "info": [
+        {
+          "locale": "ko",
+          "title": "{update title}",
+          "updateDescription": "{update description}"
+        }
+      ]
+    }
+  ]
+}
+```
+
+Assemble the request JSON using the values collected in Steps 3-4:
 
 ```json
 {
@@ -232,7 +231,7 @@ Assemble the request JSON:
 }
 ```
 
-First, show the user what will be sent by running a dry-run. The script automatically masks the API key in dry-run output, so it is safe to display directly:
+Execute the upload using the update script:
 
 ```bash
 bash skills/update-app/scripts/update.sh \
@@ -240,11 +239,12 @@ bash skills/update-app/scripts/update.sh \
   --api-key "{api_key}" \
   --app-id {appId} \
   --request '{variants_json}' \
-  --app-file "{feuType}" "{fif_path}" \
-  --dry-run
+  --app-file "{feuType}" "{fif_path}"
 ```
 
-Show the dry-run output to the user. Then execute the actual upload (same command without `--dry-run`). Do NOT build or display the curl command yourself — always use the script, which handles API key masking internally.
+Do NOT build or display the curl command yourself — always use the script, which handles API key masking internally.
+
+**If `--dry-run` argument was provided**: Run the script with `--dry-run` flag first to show what will be sent. Then ask the user if they want to proceed with the actual upload.
 
 ### Step 6: Report Result
 
@@ -277,8 +277,6 @@ This ensures the next skill invocation (whether `update-app` or `manage-device-a
 
 ## Important Notes
 
-- **No config.json dependency.** This skill collects all input interactively. It does not read or write `seamos-assets/config.json` — that file belongs to `upload-app`.
-- **API Key Masking**: When displaying output to the user, ALWAYS mask the API key. Show only first 6 characters followed by `***` (e.g., `sdm_ak_***`). The full key should only appear inside the actual curl execution within `update.sh`.
-- The `feuType` part name in the multipart request MUST exactly match the feuType in the variants JSON.
-- The `feuType` is selected from the app's registered types via `get_app_status`, not guessed from filenames.
-- All file paths should be relative to the project root for portability.
+For shared rules (API key masking, feuType matching, file path conventions), see `skills/shared-references/sdm-common-rules.md`.
+
+**Update-app specific:** No config.json dependency. This skill collects all input interactively and does not read or write `seamos-assets/config.json` — that file belongs to `upload-app`.
