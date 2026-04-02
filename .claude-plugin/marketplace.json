@@ -4,7 +4,7 @@
   "description": "SeamOS AI Native developer ecosystem plugins for agricultural machinery app development",
   "owner": {
     "name": "AGMO-Inc",
-    "email": "dev@agmo.co.kr"
+    "email": "dev@agmo.farm"
   },
   "plugins": [
     {
