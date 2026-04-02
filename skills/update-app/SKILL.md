@@ -25,6 +25,23 @@ This skill does NOT use config.json. All version info is collected interactively
 2. The app must already exist on the marketplace (use `upload-app` first)
 3. A `.fif` app package in `seamos-assets/builds/`
 
+## Context Caching
+
+This skill uses `.seamos-context.json` at the workspace root to remember the last-used app, reducing repetitive selection across sessions.
+
+**Cache file structure:**
+```json
+{
+  "deviceId": "42",
+  "deviceName": "RV-C1000 (SN: SN-001)",
+  "appId": "10250",
+  "appName": "Test App",
+  "updatedAt": "2026-04-02T10:30:00Z"
+}
+```
+
+This file is shared with the `manage-device-app` skill. This skill only reads/writes the `appId` and `appName` fields — it preserves `deviceId` and `deviceName` if they already exist.
+
 ## Execution Flow
 
 ### Step 1: Parallel Initialization (do ALL in a single turn)
@@ -56,6 +73,17 @@ After initialization completes:
 - No `.fif` files in `seamos-assets/builds/` → tell user to place their build file
 
 #### 2-1. Select App
+
+**Cache check:** Before presenting the app list, read `.seamos-context.json` from the workspace root. If the file exists and contains `appId`:
+
+1. Verify the cached appId exists in the `list_apps` result from Step 1C
+2. If found → show confirmation prompt:
+   ```
+   이전에 사용한 앱: {appName} (ID: {appId}) — 이대로 진행할까요? (Y/다른 앱 선택)
+   ```
+   - User confirms → use cached appId, proceed to Step 2-2 (fetch app status)
+   - User declines → proceed with full app list below
+3. If not found in list → ignore cache, proceed with full app list below
 
 **If the user provided an appId** (via argument or in their message) → use it directly.
 
@@ -227,6 +255,25 @@ Show the dry-run output to the user. Then execute the actual upload (same comman
   - 400: Missing required field or invalid version format
   - 404: App ID not found
   - 5xx: Server issue, suggest retrying
+
+### Cache Update
+
+After a successful upload (2xx response), update `.seamos-context.json` at the workspace root:
+
+1. Read the existing `.seamos-context.json` (if it exists) to preserve `deviceId` and `deviceName`
+2. Update `appId`, `appName`, and `updatedAt`:
+   ```json
+   {
+     "deviceId": "{preserved from existing file, or omit if not present}",
+     "deviceName": "{preserved from existing file, or omit if not present}",
+     "appId": "{selected appId}",
+     "appName": "{selected app name}",
+     "updatedAt": "{ISO 8601 timestamp}"
+   }
+   ```
+3. Write the file using the Write tool
+
+This ensures the next skill invocation (whether `update-app` or `manage-device-app`) can reuse the app selection.
 
 ## Important Notes
 

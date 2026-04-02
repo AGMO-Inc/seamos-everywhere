@@ -36,6 +36,23 @@ All tools are from the `sdm-marketplace-local` server:
 | `uninstall_app_from_device` | Remove an app from device |
 | `get_task_status` | Poll installation/update/uninstall progress |
 
+## Context Caching
+
+This skill uses `.seamos-context.json` at the workspace root to remember the last-used device and app, reducing repetitive selection across sessions.
+
+**Cache file structure:**
+```json
+{
+  "deviceId": "42",
+  "deviceName": "RV-C1000 (SN: SN-001)",
+  "appId": "10250",
+  "appName": "Test App",
+  "updatedAt": "2026-04-02T10:30:00Z"
+}
+```
+
+This file is shared with the `update-app` skill. Changes made by either skill update the same cache.
+
 ## Execution Flow
 
 ### Step 1: Initialization
@@ -45,6 +62,20 @@ Call `list_devices` to get the user's device list. This is always needed regardl
 If the user already specified a device (by ID, name, or serial number) and an action in their message, skip ahead to the relevant step.
 
 ### Step 2: Device Selection
+
+**Cache check:** Before presenting the device list, read `.seamos-context.json` from the workspace root. If the file exists and contains `deviceId`:
+
+1. Find the cached device in the `list_devices` result
+2. If the device is **online** → show confirmation prompt:
+   ```
+   이전에 사용한 디바이스: {deviceName} (ID: {deviceId}) — 이대로 진행할까요? (Y/다른 디바이스 선택)
+   ```
+   - User confirms → use cached deviceId, skip to Step 3
+   - User declines → proceed with full device list below
+3. If the device is **offline** → ignore cache, proceed with full device list below (inform the user: "이전 디바이스 {deviceName}이 오프라인 상태입니다. 다른 디바이스를 선택해주세요.")
+4. If the device is **not found** in `list_devices` result → ignore cache, proceed with full device list
+
+**If no cache exists**, proceed with the normal flow:
 
 Present the device list:
 
@@ -84,6 +115,19 @@ Otherwise, call `list_installed_apps` with the selected deviceId to see what's c
 **Wait for user response.**
 
 ### Step 4: App Selection
+
+**Cache check:** Before presenting the app list, check `.seamos-context.json` for `appId`. If cached:
+
+1. Show confirmation prompt:
+   ```
+   이전에 사용한 앱: {appName} (ID: {appId}) — 이대로 진행할까요? (Y/다른 앱 선택)
+   ```
+   - User confirms → use cached appId, skip to Step 5
+   - User declines → proceed with full app list below
+2. For **install** action: if the cached app is already installed on the selected device, skip cache and show the uninstalled app list
+3. For **uninstall** action: if the cached app is NOT installed on the selected device, skip cache and show the installed app list
+
+**If no cache exists**, proceed with the normal flow:
 
 The app selection flow depends on the chosen action:
 
@@ -217,6 +261,24 @@ If polling times out (5 attempts without COMPLETED), inform the user:
 작업이 완료되지 않았지만, 백그라운드에서 계속 진행됩니다.
 나중에 상태를 확인하려면 "작업 상태 확인해줘"라고 말씀해주세요.
 ```
+
+### Cache Update
+
+After any successful action (install, update, or uninstall), save the selected device and app to `.seamos-context.json` at the workspace root:
+
+```json
+{
+  "deviceId": "{selected deviceId}",
+  "deviceName": "{selected device model} (SN: {serial})",
+  "appId": "{selected appId}",
+  "appName": "{selected app name}",
+  "updatedAt": "{ISO 8601 timestamp}"
+}
+```
+
+Write this file using the Write tool. If the file already exists, overwrite it entirely. This ensures the next skill invocation (whether `manage-device-app` or `update-app`) can reuse the selection.
+
+**Note on uninstall:** Even after uninstalling an app, still cache the appId — the user may want to reinstall it or manage the same app on a different device next time.
 
 ## Shortcut Handling
 
