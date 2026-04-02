@@ -13,18 +13,11 @@ The plugin bridges Claude Code to the SeamOS Development Marketplace (SDM), prov
 
 ## Installation
 
-### Internal (AGMO-Inc)
+### From GitHub
 
 ```
 /plugin marketplace add AGMO-Inc/seamos-everywhere
-/plugin install seamos-everywhere@seamos-plugins
-```
-
-### From GitHub (public)
-
-```
-/plugin marketplace add AGMO-Inc/seamos-everywhere
-/plugin install seamos-everywhere@seamos-plugins
+/plugin install seamos-everywhere@AGMO-Inc/seamos-everywhere
 ```
 
 ### Local development
@@ -85,7 +78,8 @@ Upload a SeamOS app package (`.fif`) to the SDM marketplace.
 ```
 seamos-everywhere/
 ├── .claude-plugin/
-│   └── plugin.json          # Plugin manifest
+│   ├── plugin.json          # Plugin manifest
+│   └── marketplace.json     # Marketplace registration
 ├── skills/
 │   └── upload-app/
 │       ├── SKILL.md          # Skill definition
@@ -94,7 +88,6 @@ seamos-everywhere/
 │       └── references/
 │           └── config-template.json
 ├── mcp-servers.json          # MCP server config template
-├── marketplace.json          # Marketplace registration
 ├── CLAUDE.md                 # Project instructions
 ├── LICENSE                   # MIT License
 └── README.md                 # This file
