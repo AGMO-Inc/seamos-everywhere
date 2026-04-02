@@ -11,11 +11,15 @@
   "mcpServers": "./mcp-servers.json",
   "userConfig": {
     "sdm_api_key": {
+      "title": "SDM API Key",
       "description": "SDM Marketplace API Key (APP_DEPLOY scope)",
+      "type": "string",
       "sensitive": true
     },
     "sdm_api_url": {
+      "title": "SDM API URL",
       "description": "SDM API base URL (e.g. https://marketplace-api.seamos.io)",
+      "type": "string",
       "sensitive": false
     }
   }
