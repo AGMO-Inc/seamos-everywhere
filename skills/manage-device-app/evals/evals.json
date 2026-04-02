@@ -1,0 +1,41 @@
+{
+  "skill_name": "manage-device-app",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "내 디바이스에 앱 설치하고 싶어",
+      "expected_output": "디바이스 목록을 보여주고, 사용자가 선택하면 설치 가능한 앱 목록을 보여준 뒤, 확인 후 설치를 실행하고 상태를 폴링한다",
+      "files": [],
+      "expectations": [
+        "list_devices MCP 툴을 호출하여 디바이스 목록을 가져온다",
+        "디바이스 선택을 사용자에게 요청한다",
+        "list_apps와 list_installed_apps를 호출하여 설치 가능한 앱을 필터링한다",
+        "실행 전에 사용자에게 확인을 요청한다"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "내 디바이스에 설치된 앱 목록 보여줘",
+      "expected_output": "디바이스 목록을 보여주고, 선택 후 해당 디바이스에 설치된 앱 목록을 테이블로 보여준다. 전체 설치/삭제 워크플로우로 진입하지 않는다.",
+      "files": [],
+      "expectations": [
+        "list_devices MCP 툴을 호출한다",
+        "list_installed_apps MCP 툴을 호출한다",
+        "설치된 앱 목록을 테이블 형태로 보여준다",
+        "설치/삭제/업데이트 워크플로우로 진입하지 않고 조회만 한다"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "디바이스에서 앱 삭제하고 싶어",
+      "expected_output": "디바이스 목록 → 디바이스 선택 → 설치된 앱 목록 → 삭제할 앱 선택 → 확인 → 삭제 실행 → 상태 폴링",
+      "files": [],
+      "expectations": [
+        "list_devices MCP 툴을 호출하여 디바이스 목록을 가져온다",
+        "list_installed_apps MCP 툴을 호출하여 설치된 앱을 보여준다",
+        "삭제할 앱 선택을 사용자에게 요청한다",
+        "실행 전에 사용자에게 확인을 요청한다"
+      ]
+    }
+  ]
+}

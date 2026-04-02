@@ -3,4 +3,6 @@
 
 concept
 seamos-assets/
-upload-app-workspace
+upload-app-workspace/*
+update-app-workspace/*
+manage-device-app-workspace/*
