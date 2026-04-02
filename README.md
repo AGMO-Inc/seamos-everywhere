@@ -2,7 +2,7 @@
 
 <img src="assets/Agriman_2.png" alt="Agriman" width="120" />
 
-# Seamos Everywhere
+# SeamOS Everywhere
 
 **Claude Code plugin for the SeamOS AI Native developer ecosystem**
 
