@@ -72,7 +72,7 @@ Apply the usage pattern with concrete values from the detail file:
 
 ## Notes
 
-- **ISOPGN** has 140 signals and **Implement** has 634 signals — when working with these, ask the user which specific signals they need rather than loading all
+- **ISOPGN** has 140 signals and **Implement** has 634 signals — when working with these, ask the user which specific signals they need, then use Grep to search the detail file for matching rows only. Never load the entire file into context
 - **Platform_Service** uses method calls, not getter/setter — see its detail file for the different interface format
 - All plugin definitions are language-agnostic; only the usage patterns differ between Java and C++
 - The `scripts/parse-fgd.py` script can regenerate detail files from any `.fgd` source file
