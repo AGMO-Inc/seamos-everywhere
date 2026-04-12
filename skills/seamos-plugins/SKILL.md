@@ -60,7 +60,7 @@ Determine the project language:
 
 Load the appropriate pattern file:
 - Java → `references/usage-patterns/java.md`
-- C++ → `references/usage-patterns/cpp.md` (placeholder — patterns pending)
+- C++ → `references/usage-patterns/cpp.md`
 
 ### Step 4: Code Generation
 

@@ -6,7 +6,7 @@
 
 **Claude Code plugin for the SeamOS AI Native developer ecosystem**
 
-[![Version](https://img.shields.io/badge/version-0.3.2-blue.svg)](https://github.com/AGMO-Inc/seamos-everywhere/releases)
+[![Version](https://img.shields.io/badge/version-0.3.3-blue.svg)](https://github.com/AGMO-Inc/seamos-everywhere/releases)
 [![Skills](https://img.shields.io/badge/skills-5-orange.svg)](#skills)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey.svg)](LICENSE)
 [![Org](https://img.shields.io/badge/org-AGMO--Inc-green.svg)](https://github.com/AGMO-Inc)
@@ -150,10 +150,54 @@ Install, update, or uninstall apps on physical SeamOS devices. Manages apps **on
 
 ---
 
+### seamos-plugins
+
+SEAMOS plugin reference and code generation guide. Provides a catalog of 13 NEVONEX plugins with full interface specs, and language-specific code patterns for both **Java** and **C++** projects. Covers CAN signals, GPS, IMU, GPIO, Platform Services, and more.
+
+**Triggers:** `plugin` · `플러그인` · `CAN signal` · `Machine object` · `GPS` · `tractor` · `steering` · `IMU`
+
+```
+/seamos-everywhere:seamos-plugins
+```
+
+**Flow:**
+1. Reads plugin catalog — identifies the target plugin from user intent
+2. Loads the plugin's interface spec (signals, data types, directions)
+3. Detects project language (Java / C++) and loads the matching code patterns
+4. Generates code using placeholders filled with actual signal data
+
+| Feature | Details |
+|---------|---------|
+| Plugins | 13 (CAN, GPS, IMU, GPIO, Implement, ISOPGN, Platform Service, etc.) |
+| Languages | Java, C++ |
+| Signals | 634 (Implement) · 140 (ISOPGN) · 3–15 (others) |
+
+---
+
+### build-fif
+
+Build a deployable FIF (Feature Installation File) package using Docker. Supports both Java (Maven) and C++ (CMake) SeamOS projects with auto-detection.
+
+**Triggers:** `build fif` · `fif 빌드` · `배포 빌드` · `앱 빌드` · `패키지 빌드`
+
+```
+/seamos-everywhere:build-fif
+```
+
+**Flow:**
+1. Auto-detects project type (Java / C++) from project structure
+2. Runs Docker-based cross-compilation (aarch64 target)
+3. Packages the build artifact into a `.fif` file
+4. Outputs to `seamos-assets/builds/*.fif`
+
+---
+
 ### Skill comparison
 
 | Want to... | Skill |
 |---|---|
+| Look up plugin interfaces and generate signal code | `seamos-plugins` |
+| Build a `.fif` deployment package | `build-fif` |
 | Publish a brand-new app to the marketplace | `upload-app` |
 | Push a new version of an existing app | `update-app` |
 | Install / update / uninstall an app on a device | `manage-device-app` |
