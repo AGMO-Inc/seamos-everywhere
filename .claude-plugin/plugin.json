@@ -1,7 +1,7 @@
 {
   "name": "seamos-everywhere",
   "description": "SeamOS AI Native developer plugin — build, test, and deploy agricultural machinery apps using natural language through Claude Code",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "author": {
     "name": "AGMO-Inc"
   },

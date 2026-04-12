@@ -6,8 +6,8 @@
 
 **Claude Code plugin for the SeamOS AI Native developer ecosystem**
 
-[![Version](https://img.shields.io/badge/version-0.3.3-blue.svg)](https://github.com/AGMO-Inc/seamos-everywhere/releases)
-[![Skills](https://img.shields.io/badge/skills-5-orange.svg)](#skills)
+[![Version](https://img.shields.io/badge/version-0.3.4-blue.svg)](https://github.com/AGMO-Inc/seamos-everywhere/releases)
+[![Skills](https://img.shields.io/badge/skills-6-orange.svg)](#skills)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey.svg)](LICENSE)
 [![Org](https://img.shields.io/badge/org-AGMO--Inc-green.svg)](https://github.com/AGMO-Inc)
 
@@ -174,6 +174,30 @@ SEAMOS plugin reference and code generation guide. Provides a catalog of 13 NEVO
 
 ---
 
+### seamos-app-framework
+
+SeamOS app framework code generation guide. Provides language-specific patterns for **REST API**, **WebSocket**, **DB persistence** (with NEVONEX container survival), and **Feature Lifecycle** management. Supports both **Java** and **C++** projects.
+
+**Triggers:** `REST` · `API` · `endpoint` · `WebSocket` · `DB` · `database` · `persistence` · `lifecycle` · `CRUD` · `saveToDisk`
+
+```
+/seamos-everywhere:seamos-app-framework
+```
+
+**Flow:**
+1. Identifies the needed pattern (REST, WebSocket, DB, Lifecycle)
+2. Detects project language (Java / C++)
+3. Loads language-specific framework patterns
+4. Generates code using NEVONEX-specific conventions
+
+| Feature | Details |
+|---------|---------|
+| Patterns | 4 (REST API, WebSocket, DB Persistence, Feature Lifecycle) |
+| Languages | Java, C++ |
+| DB Persistence | NEVONEX container-aware (FCALFileProvider / FileProvider) |
+
+---
+
 ### build-fif
 
 Build a deployable FIF (Feature Installation File) package using Docker. Supports both Java (Maven) and C++ (CMake) SeamOS projects with auto-detection.
@@ -196,6 +220,7 @@ Build a deployable FIF (Feature Installation File) package using Docker. Support
 
 | Want to... | Skill |
 |---|---|
+| Generate REST, WebSocket, DB, or Lifecycle framework code | `seamos-app-framework` |
 | Look up plugin interfaces and generate signal code | `seamos-plugins` |
 | Build a `.fif` deployment package | `build-fif` |
 | Publish a brand-new app to the marketplace | `upload-app` |
