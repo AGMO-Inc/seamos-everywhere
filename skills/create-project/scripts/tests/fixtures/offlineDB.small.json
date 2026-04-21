@@ -1,0 +1,29 @@
+{
+  "elements": [
+    {
+      "name": "CAN_AGMO_SteerMotor",
+      "childelements": [],
+      "interfaces": [
+        { "interfaceName": "Motor_Heartbeat", "accessMethod": "", "updateRate": "Adhoc",   "parent": "CAN_AGMO_SteerMotor" },
+        { "interfaceName": "Motor_Request",   "accessMethod": "", "updateRate": "Process", "parent": "CAN_AGMO_SteerMotor" }
+      ]
+    },
+    {
+      "name": "Platform_Service",
+      "childelements": [],
+      "interfaces": [
+        { "interfaceName": "Cloud_Download", "accessMethod": "", "updateRate": "",       "parent": "Platform_Service" },
+        { "interfaceName": "Cloud_Upload",   "accessMethod": "", "updateRate": "Adhoc",  "parent": "Platform_Service" }
+      ]
+    },
+    {
+      "name": "Implement",
+      "childelements": [],
+      "interfaces": [
+        { "interfaceName": "connectorgeometry_x", "accessMethod": "", "updateRate": "Cyclic", "parent": "Implement" },
+        { "interfaceName": "connectorgeometry_y", "accessMethod": "", "updateRate": "Cyclic", "parent": "Implement" }
+      ]
+    }
+  ],
+  "enumDetails": "{\"noop\": true}"
+}

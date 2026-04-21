@@ -4,6 +4,9 @@
 
 concept
 seamos-assets/
+create-project-workspace/*
 upload-app-workspace/*
 update-app-workspace/*
 manage-device-app-workspace/*
+
+ref

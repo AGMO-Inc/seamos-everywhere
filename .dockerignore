@@ -1,0 +1,5 @@
+# Exclude everything by default
+*
+# Allow Dockerfile build context subset
+!docker/
+!ref/Linux_HeadlessFD/*.tar.gz

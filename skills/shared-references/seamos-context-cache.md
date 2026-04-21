@@ -106,3 +106,48 @@ Example for `manage-device-app`:
 - **No schema enforcement**: This is a simple key-value store with no validation. Skills trust each other to write valid data.
 - **Non-critical**: The cache is optional for skill operation. If it doesn't exist or is invalid, skills should proceed with interactive selection.
 - **User cleanup**: Users can manually delete `.seamos-context.json` to reset cached selections at any time.
+
+## create-project
+
+`skills/create-project/` 스킬이 성공 종료 시 프로젝트 루트 `.seamos-context.json` 의 `last_project` 키를 atomic upsert (flock + `.tmp` + `mv`) 한다.
+
+### Schema
+
+```json
+{
+  "last_project": {
+    "name": "<project-name>",
+    "workspace_path": "<absolute-path>",
+    "operation": "GENERATE_FSP" | "GENERATE_SDK_APP" | "UPDATE_SDK_APP",
+    "image_tag": "public.ecr.aws/<alias>/seamos-fd-headless:<version>",
+    "interface_json_sha256": "<64-hex>",
+    "created_at": "<ISO-8601 UTC>"
+  }
+}
+```
+
+- `name` — `--project-name` 인자 값
+- `workspace_path` — 생성된 FSP 프로젝트의 절대 경로 (스킬 실행 시 `--workspace` 값의 절대 경로)
+- `operation` — 수행된 FD 동작 (3종 중 하나)
+- `image_tag` — 실제 사용된 Docker 이미지 태그
+- `interface_json_sha256` — `<workspace>/_interface.json` 의 SHA256 (재실행 시 변경 감지용)
+- `created_at` — 성공 완료 시점 (UTC)
+
+### 후속 스킬에서 읽기
+
+후속 스킬(`build-fif`, `manage-device-app`, 기타 FD 체인) 은 `.seamos-context.json` 의 `last_project` 값을 자동 참조하여 사용자가 프로젝트 경로를 매번 지정하지 않아도 되게 한다.
+
+```bash
+# 최근 프로젝트 워크스페이스 읽기
+LAST_WS=$(jq -r '.last_project.workspace_path' .seamos-context.json)
+
+# 최근 프로젝트 이름
+LAST_NAME=$(jq -r '.last_project.name' .seamos-context.json)
+
+# interface JSON 해시 (변경 감지)
+LAST_IFACE_SHA=$(jq -r '.last_project.interface_json_sha256' .seamos-context.json)
+```
+
+### Concurrency
+
+`create-project.sh` 는 쓰기 시 `.seamos-context.json.lock` 으로 `flock` 상호배제 + `.tmp` 임시파일 후 `mv` 로 atomic 교체. 두 스킬 인보케이션이 동시에 실행되어도 JSON 파일은 항상 valid.

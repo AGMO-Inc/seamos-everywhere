@@ -1,0 +1,119 @@
+name: build-fd-image
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'FD binary version (e.g. 8.6.0-SNAPSHOT-260419.0754)'
+        required: true
+        type: string
+  push:
+    tags:
+      - 'fd-v*'
+
+permissions:
+  id-token: write   # OIDC token
+  contents: read
+
+jobs:
+  build-and-push:
+    name: Build & push FD Headless image to Public ECR
+    runs-on: ubuntu-latest
+    env:
+      ECR_PUBLIC_ALIAS: ${{ secrets.AWS_ECR_PUBLIC_ALIAS }}
+      S3_BUCKET: ${{ secrets.AWS_S3_ARTIFACT_BUCKET }}
+      FD_VERSION: ${{ github.event.inputs.version || github.ref_name }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Gate 1: legal approval ─────────────────────────────────────────────
+      - name: Verify LEGAL.md approval gate
+        run: |
+          set -euo pipefail
+          test -f LEGAL.md
+          grep -qE '^(## )?STATUS: APPROVED$' LEGAL.md \
+            || { echo "ERROR: LEGAL.md STATUS is not APPROVED. Publication blocked."; exit 1; }
+          echo "LEGAL.md gate passed."
+
+      # ── AWS OIDC auth ──────────────────────────────────────────────────────
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      # ── Fetch FD binary from S3 ────────────────────────────────────────────
+      - name: Download FD binary from S3
+        run: |
+          set -euo pipefail
+          mkdir -p ref/Linux_HeadlessFD
+          aws s3 cp \
+            "s3://${S3_BUCKET}/fd-headless/${FD_VERSION}/FD_Headless-linux.gtk.x86_64-${FD_VERSION}.tar.gz" \
+            ref/Linux_HeadlessFD/
+          ls -la ref/Linux_HeadlessFD/
+
+      # ── Gate 2: SHA256 integrity ───────────────────────────────────────────
+      - name: Verify FD binary SHA256 (checksums.txt)
+        run: |
+          set -euo pipefail
+          (cd ref/Linux_HeadlessFD && shasum -a 256 -c "${GITHUB_WORKSPACE}/docker/fd-headless/checksums.txt")
+
+      # ── Gate 3: fd-version.json drift ──────────────────────────────────────
+      - name: Verify fd-version.json matches pulled tar.gz
+        run: |
+          set -euo pipefail
+          ACTUAL_SHA=$(shasum -a 256 ref/Linux_HeadlessFD/FD_Headless-linux.gtk.x86_64-*.tar.gz | awk '{print $1}')
+          EXPECTED_SHA=$(jq -r '.tarball_sha256' skills/create-project/references/fd-version.json)
+          if [[ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]]; then
+            echo "ERROR: fd-version.json drift detected."
+            echo "  actual:   $ACTUAL_SHA"
+            echo "  expected: $EXPECTED_SHA"
+            exit 1
+          fi
+          echo "fd-version.json drift check passed."
+
+      # ── ECR login ──────────────────────────────────────────────────────────
+      - name: Login to Public ECR
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          registry-type: public
+
+      # ── Build & push ───────────────────────────────────────────────────────
+      - name: Build and push image (linux/amd64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/fd-headless/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            public.ecr.aws/${{ env.ECR_PUBLIC_ALIAS }}/seamos-fd-headless:${{ env.FD_VERSION }}
+            public.ecr.aws/${{ env.ECR_PUBLIC_ALIAS }}/seamos-fd-headless:latest
+
+      # ── Smoke test on the fresh image ──────────────────────────────────────
+      - name: Smoke test — run FD with sample interface
+        run: |
+          set -euo pipefail
+          IMAGE=public.ecr.aws/${ECR_PUBLIC_ALIAS}/seamos-fd-headless:${FD_VERSION}
+          mkdir -p /tmp/ws
+          cp docker/fd-headless/prototype/fd_user_selected_interface.json /tmp/ws/_interface.json
+          docker run --rm --platform linux/amd64 \
+            -v /tmp/ws:/workspace \
+            -e FD_WORKSPACE=/workspace \
+            -e FD_INTERFACE_JSON=/workspace/_interface.json \
+            -e FD_PROJECT_NAME=CISmoke \
+            -e FD_UI_TYPE="Custom UI" \
+            -e FD_OPERATION=GENERATE_FSP \
+            "$IMAGE" 2>&1 | tee /tmp/fd-smoke.log
+          grep -qF "FD HEADLESS EXECUTION COMPLETED SUCCESSFULLY" /tmp/fd-smoke.log \
+            || { echo "ERROR: smoke test did not emit success string."; exit 1; }
+
+      - name: Upload smoke log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fd-smoke-log
+          path: /tmp/fd-smoke.log
+          if-no-files-found: ignore

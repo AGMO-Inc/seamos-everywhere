@@ -1,0 +1,13 @@
+# This file is relative to the build context (repo root).
+# Exclude large non-binary assets from the build context to keep it lean.
+
+# Exclude PDFs and zip archives under ref/
+ref/00_HeadlessFD/*.pdf
+ref/00_HeadlessFD/*.zip
+
+# Exclude offlineDB (not needed inside the image)
+ref/00_HeadlessFD/offlineDB.json
+
+# Exclude prototype workspace output artifacts
+docker/fd-headless/prototype/workspace_out/
+docker/fd-headless/prototype/fd_headless_run.log

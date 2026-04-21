@@ -1,0 +1,63 @@
+[
+  {
+    "name": "generate_fsp_with_explicit_interface_json",
+    "description": "GENERATE_FSP with --interface-json pointing to references/interface-sample.json",
+    "input": {
+      "command": "bash skills/create-project/scripts/create-project.sh",
+      "args": [
+        "--project-name", "EvalProject1",
+        "--interface-json", "skills/create-project/references/interface-sample.json",
+        "--operation", "GENERATE_FSP",
+        "--workspace", "create-project-workspace/EvalProject1",
+        "--dry-run"
+      ]
+    },
+    "expected": {
+      "exit_code": 0,
+      "stdout_contains": ["EvalProject1", "GENERATE_FSP"]
+    },
+    "timeout_ms": 30000
+  },
+  {
+    "name": "generate_fsp_via_interactive_synthesis",
+    "description": "GENERATE_FSP without --interface-json — skill drives interactive synthesis with mocked user turns",
+    "input": {
+      "command": "bash skills/create-project/scripts/create-project.sh",
+      "args": [
+        "--project-name", "EvalProject2",
+        "--operation", "GENERATE_FSP",
+        "--workspace", "create-project-workspace/EvalProject2",
+        "--dry-run"
+      ],
+      "mock_user_turns": [
+        "1",
+        "1",
+        "Cyclic/100ms",
+        "done"
+      ]
+    },
+    "expected": {
+      "exit_code": 0,
+      "stdout_contains": ["EvalProject2", "interface JSON"]
+    },
+    "timeout_ms": 60000
+  },
+  {
+    "name": "reject_invalid_operation",
+    "description": "Invalid --operation XYZ triggers usage error",
+    "input": {
+      "command": "bash skills/create-project/scripts/create-project.sh",
+      "args": [
+        "--project-name", "EvalProject3",
+        "--operation", "INVALID_OP",
+        "--interface-json", "skills/create-project/references/interface-sample.json",
+        "--dry-run"
+      ]
+    },
+    "expected": {
+      "exit_code": 64,
+      "stderr_contains": ["INVALID_OP"]
+    },
+    "timeout_ms": 10000
+  }
+]

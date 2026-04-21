@@ -1,0 +1,22 @@
+[
+  {
+    "branch": "CAN_AGMO_SteerMotor/Motor_Heartbeat",
+    "config": "Adhoc"
+  },
+  {
+    "branch": "CAN_AGMO_SteerMotor/Motor_Request",
+    "config": "Process"
+  },
+  {
+    "branch": "Platform_Service/Cloud/Download",
+    "config": ""
+  },
+  {
+    "branch": "Implement/Connector/connectorgeometry_x",
+    "config": "Cyclic/100ms"
+  },
+  {
+    "branch": "Implement/Connector/connectorgeometry_y",
+    "config": "Cyclic/200ms"
+  }
+]

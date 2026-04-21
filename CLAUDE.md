@@ -56,7 +56,7 @@ The end-to-end workflow for building a SeamOS app with this plugin:
 
 | Phase | Layer | Actions |
 |-------|-------|---------|
-| 1. Project Creation | FD MCP | Browse plugins → create project → generate skeleton |
+| 1. Project Creation | FD MCP (planned) / create-project skill (implemented) | Browse interfaces (offlineDB) → synthesize interface JSON → generate FSP via Dockerized FD Headless |
 | 2. Business Logic | SeamOS Skills | Data handling, WebSocket, REST API, verification |
 | 3. UI Development | SeamOS Skills | UI framework template, build & integration |
 | 4. Testing | FD MCP | Build, simulation, run |
