@@ -6,8 +6,8 @@
 
 **Claude Code plugin for the SeamOS AI Native developer ecosystem**
 
-[![Version](https://img.shields.io/badge/version-0.3.4-blue.svg)](https://github.com/AGMO-Inc/seamos-everywhere/releases)
-[![Skills](https://img.shields.io/badge/skills-6-orange.svg)](#skills)
+[![Version](https://img.shields.io/badge/version-0.4.0-blue.svg)](https://github.com/AGMO-Inc/seamos-everywhere/releases)
+[![Skills](https://img.shields.io/badge/skills-7-orange.svg)](#skills)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey.svg)](LICENSE)
 [![Org](https://img.shields.io/badge/org-AGMO--Inc-green.svg)](https://github.com/AGMO-Inc)
 
@@ -216,10 +216,37 @@ Build a deployable FIF (Feature Installation File) package using Docker. Support
 
 ---
 
+### create-project
+
+Create a new SeamOS project (FSP) via a Dockerized FD Headless binary. Supports natural-language interface selection against the offlineDB catalog, or direct consumption of an `fd_user_selected_interface.json`. UI type is fixed to `Custom UI`.
+
+**Triggers:** `프로젝트 생성` · `create project` · `FSP 생성` · `skeleton generate` · `SeamOS 프로젝트 만들어`
+
+```
+/seamos-everywhere:create-project
+```
+
+**Flow:**
+1. Preflight check — host tools (`docker`, `jq`, `shasum`, `timeout`) + Apple Silicon Rosetta 2 detection
+2. Interactive interface JSON synthesis from `offlineDB.json` (or accepts `--interface-json <path>`)
+3. Validates the synthesized JSON before any container run
+4. Runs `public.ecr.aws/<alias>/seamos-fd-headless` image with the chosen FD operation
+5. Detects success/failure via stdout grep, writes `.seamos-context.json` atomically for downstream skills
+
+| Feature | Details |
+|---------|---------|
+| FD operations | `GENERATE_FSP`, `GENERATE_SDK_APP`, `UPDATE_SDK_APP` |
+| Image | `linux/amd64` — compressed ~293 MB / uncompressed ~934 MB |
+| Offline | `docker save`/`load` air-gapped bundle supported |
+| Blocking gates | supply-chain (SHA256) · legal (LEGAL.md) · compat (preflight) · validity (JSON validator) |
+
+---
+
 ### Skill comparison
 
 | Want to... | Skill |
 |---|---|
+| Create a new SeamOS project (FSP) | `create-project` |
 | Generate REST, WebSocket, DB, or Lifecycle framework code | `seamos-app-framework` |
 | Look up plugin interfaces and generate signal code | `seamos-plugins` |
 | Build a `.fif` deployment package | `build-fif` |
