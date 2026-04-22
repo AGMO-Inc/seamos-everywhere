@@ -113,7 +113,7 @@ GitHub → Settings → Secrets and variables → Actions 에 추가:
 - `AWS_ROLE_ARN`: `arn:aws:iam::<account-id>:role/seamos-everywhere-fd-build`
 - `AWS_REGION`: 예: `ap-northeast-2`
 - `AWS_S3_ARTIFACT_BUCKET`: `<bucket>`
-- `AWS_ECR_PUBLIC_ALIAS`: `<alias>` (Public ECR registry alias)
+- `AWS_ECR_PUBLIC_ALIAS`: `g0j5z0m9` (Public ECR registry alias)
 
 ## 5. 검증
 

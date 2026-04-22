@@ -230,7 +230,7 @@ Create a new SeamOS project (FSP) via a Dockerized FD Headless binary. Supports 
 1. Preflight check — host tools (`docker`, `jq`, `shasum`, `timeout`) + Apple Silicon Rosetta 2 detection
 2. Interactive interface JSON synthesis from `offlineDB.json` (or accepts `--interface-json <path>`)
 3. Validates the synthesized JSON before any container run
-4. Runs `public.ecr.aws/<alias>/seamos-fd-headless` image with the chosen FD operation
+4. Runs `public.ecr.aws/g0j5z0m9/seamos-fd-headless` image with the chosen FD operation
 5. Detects success/failure via stdout grep, writes `.seamos-context.json` atomically for downstream skills
 
 | Feature | Details |
