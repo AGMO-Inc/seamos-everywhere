@@ -1,9 +1,8 @@
 # syntax=docker/dockerfile:1
-FROM --platform=linux/amd64 debian:bookworm-slim
+FROM --platform=linux/amd64 eclipse-temurin:21-jre-jammy
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        openjdk-17-jre-headless \
         libgtk-3-0 \
         libxtst6 \
         libxrender1 \
