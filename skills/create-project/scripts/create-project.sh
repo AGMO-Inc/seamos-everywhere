@@ -6,6 +6,22 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
+# Resolve offlineDB.json: env > bundle assets > repo fallback
+resolve_offlinedb() {
+  if [[ -n "${SEAMOS_OFFLINEDB_PATH:-}" && -f "${SEAMOS_OFFLINEDB_PATH}" ]]; then
+    echo "${SEAMOS_OFFLINEDB_PATH}"; return 0
+  fi
+  local skill_root
+  skill_root="$(cd "${SCRIPT_DIR}/.." && pwd)"
+  if [[ -f "${skill_root}/assets/offlineDB.json" ]]; then
+    echo "${skill_root}/assets/offlineDB.json"; return 0
+  fi
+  if [[ -n "${REPO_ROOT:-}" && -f "${REPO_ROOT}/ref/00_HeadlessFD/offlineDB.json" ]]; then
+    echo "${REPO_ROOT}/ref/00_HeadlessFD/offlineDB.json"; return 0
+  fi
+  return 1
+}
+
 usage() {
   cat <<'EOF'
 Usage: create-project.sh [options]
@@ -18,7 +34,7 @@ Options:
   --operation <OP>              FD operation: GENERATE_FSP | GENERATE_SDK_APP | UPDATE_SDK_APP
                                 (default: GENERATE_FSP)
   --image-tag <tag>             Docker image tag
-                                (default: public.ecr.aws/<alias>/seamos-fd-headless:latest)
+                                (default: public.ecr.aws/g0j5z0m9/seamos-fd-headless:latest)
   --dry-run                     Print the assembled docker command and exit (no run)
   --force-clean                 Remove existing workspace before running (mutually exclusive with --resume)
   --resume                      Keep existing workspace (mutually exclusive with --force-clean)
@@ -39,7 +55,7 @@ PROJECT_NAME=""
 INTERFACE_JSON=""
 WORKSPACE=""
 OPERATION="GENERATE_FSP"
-IMAGE_TAG="public.ecr.aws/<alias>/seamos-fd-headless:latest"
+IMAGE_TAG="public.ecr.aws/g0j5z0m9/seamos-fd-headless:latest"
 DRY_RUN=0
 FORCE_CLEAN=0
 RESUME=0
@@ -120,8 +136,8 @@ if [[ -n "$INTERFACE_JSON" ]]; then
 
   # ── 4a. Validator gate
   VALIDATOR="${SCRIPT_DIR}/validate-interface-json.sh"
-  OFFLINEDB="${REPO_ROOT}/ref/00_HeadlessFD/offlineDB.json"
-  if [[ -x "$VALIDATOR" && -r "$OFFLINEDB" ]]; then
+  OFFLINEDB="$(resolve_offlinedb || true)"
+  if [[ -x "$VALIDATOR" && -n "$OFFLINEDB" ]]; then
     bash "$VALIDATOR" "$WS_IFACE" "$OFFLINEDB" \
       || { echo "ERROR: interface JSON validation failed — docker run skipped." >&2; exit 1; }
   else

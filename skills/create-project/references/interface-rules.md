@@ -1,41 +1,41 @@
 # Interface JSON Validation Rules
 
-`validate-interface-json.sh` 가 적용하는 규칙.
+Rules applied by `validate-interface-json.sh`.
 
-## 구조 규칙
+## Structural Rules
 
-1. JSON root 는 **배열** (`type == "array"`).
-2. 각 원소는 객체이며 `branch` (string) 와 `config` (string) 필드를 갖는다.
+1. JSON root must be an **array** (`type == "array"`).
+2. Each element is an object with `branch` (string) and `config` (string) fields.
 
-## `branch` 검증
+## `branch` Validation
 
-- `/` 로 구분된 경로. 예: `CAN_AGMO_SteerMotor/Motor_Heartbeat`, `Implement/Connector/connectorgeometry_x`.
-- **첫 토큰**(element name) 은 `offlineDB.json` 의 `elements[].name` 중 하나와 정확히 일치해야 함.
-- **마지막 토큰**(interface name) 은 `offlineDB.json` 의 전체 트리(모든 중첩 단계) 중 어떤 `interfaceName` 과 일치해야 함.
+- Slash-separated path. Examples: `CAN_AGMO_SteerMotor/Motor_Heartbeat`, `Implement/Connector/connectorgeometry_x`.
+- The **first token** (element name) must exactly match one of the `elements[].name` values in `offlineDB.json`.
+- The **last token** (interface name) must match an `interfaceName` anywhere in the full tree (all nesting levels) of `offlineDB.json`.
 
-이 규칙은 **느슨한(loose) 검증** 이다. 중간 경로의 정확성은 FD 실행 시 자체 검증되며, 본 스크립트의 목적은 **명백한 오타/허위 경로 조기 차단**이다.
+This is a **loose validation**. Accuracy of intermediate path segments is verified by FD itself at runtime. The purpose of this script is **early blocking of obvious typos and invalid paths**.
 
-## `config` 허용 값
+## `config` Allowed Values
 
-고정 값:
-- `` (빈 문자열)
+Fixed values:
+- `` (empty string)
 - `Adhoc`
 - `Adhoc/Cyclic`
 - `Cyclic`
 - `Process`
 
-패턴 허용:
-- `Cyclic/<N>ms` — `<N>` 은 1 자리 이상의 양의 정수 (예: `Cyclic/100ms`, `Cyclic/250ms`).
+Pattern allowed:
+- `Cyclic/<N>ms` — `<N>` is one or more digits, positive integer (e.g., `Cyclic/100ms`, `Cyclic/250ms`).
 
-## 실패 출력 형식
+## Failure Output Format
 
-실패 시 stderr 에 entry 별로 다음 라인 출력:
+On failure, each entry is written to stderr in the following format:
 
 ```
 branch="..." config="..." reason=<error>
 ```
 
-가능한 `reason`:
+Possible `reason` values:
 - `missing_branch`
 - `unknown_element:<first_token>`
 - `unknown_interface:<last_token>`
@@ -43,12 +43,12 @@ branch="..." config="..." reason=<error>
 
 ## Exit Code
 
-- `0`: 모든 entry 유효
-- `1`: 하나 이상 실패 (stderr 에 상세)
-- `64`: CLI 인자 개수 부족
+- `0`: all entries valid
+- `1`: one or more failures (details in stderr)
+- `64`: insufficient CLI arguments
 
 ## Out of scope
 
-- `enumDetails` 값 파싱 및 enum 체크 (별도 TODO)
-- 중간 경로 정확성 검증 (FD 에 위임)
-- `childelements` 재귀 탐색 (YAGNI)
+- `enumDetails` value parsing and enum check (separate TODO)
+- Intermediate path accuracy validation (delegated to FD)
+- `childelements` recursive traversal (YAGNI)

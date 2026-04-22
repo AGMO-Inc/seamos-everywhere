@@ -1,16 +1,16 @@
 # Interface Schema
 
-FD Headless 가 입력으로 받는 interface JSON 과 카탈로그 JSON 구조.
+Structure of the interface JSON and catalog JSON accepted as input by FD Headless.
 
 ## 1. `offlineDB.json` (interface catalog)
 
-위치: `ref/00_HeadlessFD/offlineDB.json` (~141 KB).
+Location: `ref/00_HeadlessFD/offlineDB.json` (~141 KB).
 
 **Top-level keys:**
 - `elements` — array of plugin categories
-- `enumDetails` — **serialized JSON string** (한 번 더 `JSON.parse` 또는 `jq 'fromjson'` 이 필요한 2차 직렬화). 소비자는 반드시 2차 파싱 수행.
+- `enumDetails` — **serialized JSON string** (requires a second `JSON.parse` or `jq 'fromjson'` call). Consumers must perform the secondary parse.
 
-**`elements[i]` 구조:**
+**`elements[i]` structure:**
 
 ```json
 {
@@ -27,17 +27,17 @@ FD Headless 가 입력으로 받는 interface JSON 과 카탈로그 JSON 구조.
 }
 ```
 
-**`updateRate` 허용 값:**
+**`updateRate` allowed values:**
 
 - `Adhoc`
 - `Adhoc/Cyclic`
-- `Cyclic` (주기 지정 시 `Cyclic/<N>ms` 형식으로 확장 — 예: `Cyclic/100ms`)
+- `Cyclic` (expanded to `Cyclic/<N>ms` when a period is specified — e.g., `Cyclic/100ms`)
 - `Process`
-- `""` (빈 문자열 — 특별 분류 없음)
+- `""` (empty string — no special classification)
 
 ## 2. `fd_user_selected_interface.json` (skill → FD input)
 
-사용자가 선택한 interface 를 FD 에게 전달하는 JSON. top-level 은 **배열**, 각 원소는 branch/config 객체.
+JSON passed from the skill to FD representing the user-selected interfaces. Top level is an **array**; each element is a branch/config object.
 
 ```json
 [
@@ -66,15 +66,15 @@ FD Headless 가 입력으로 받는 interface JSON 과 카탈로그 JSON 구조.
 
 **Field semantics:**
 
-- `branch` — offlineDB 의 `elements[].name` → `childelements`/`interfaces` 트리에서 `/` 로 구분된 절대 경로. 마지막 토큰은 `interfaceName`.
-- `config` — 해당 interface 의 `updateRate` 허용 집합 중 하나. `Cyclic` 선택 시 주기 부여: `Cyclic/<N>ms`.
+- `branch` — absolute path delimited by `/` through the `elements[].name` → `childelements`/`interfaces` tree in offlineDB. The last token is the `interfaceName`.
+- `config` — one of the allowed values from the interface's `updateRate` set. When `Cyclic` is selected, append the period: `Cyclic/<N>ms`.
 
-## 3. `enumDetails` 파싱 예시
+## 3. `enumDetails` parsing example
 
-`jq` 사용:
+Using `jq`:
 
 ```bash
-# enumDetails 는 문자열이므로 fromjson 으로 2차 파싱
+# enumDetails is a string, so use fromjson for secondary parse
 jq '.enumDetails | fromjson' ref/00_HeadlessFD/offlineDB.json
 ```
 
@@ -82,7 +82,7 @@ JavaScript/TypeScript:
 
 ```js
 const db = JSON.parse(fs.readFileSync('offlineDB.json', 'utf8'));
-const enumDetails = JSON.parse(db.enumDetails); // 2차 파싱
+const enumDetails = JSON.parse(db.enumDetails); // secondary parse
 ```
 
-**주의**: `enumDetails` 는 serialized JSON string 이며 소비자가 직접 구조 접근하려면 반드시 2차 파싱이 필요하다.
+> **Note**: `enumDetails` is a serialized JSON string. Consumers that need direct structural access must perform the secondary parse themselves.
