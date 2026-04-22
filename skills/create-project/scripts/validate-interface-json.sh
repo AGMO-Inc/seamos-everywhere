@@ -3,19 +3,55 @@
 # before the full FD Headless docker run.
 #
 # Usage:
-#   bash validate-interface-json.sh <interface.json> <offlineDB.json>
+#   bash validate-interface-json.sh <interface.json> [<offlineDB.json>]
+#
+# If <offlineDB.json> is omitted, it is resolved in priority order:
+#   1. $SEAMOS_OFFLINEDB_PATH environment variable
+#   2. <skill>/assets/offlineDB.json  (bundled with this skill)
+#   3. $REPO_ROOT/ref/00_HeadlessFD/offlineDB.json  (repo-local fallback)
 #
 # Accepts interface.json via path or /dev/stdin (pass "-" as first arg).
 
 set -euo pipefail
 
-if [[ $# -lt 2 ]]; then
-  echo "Usage: $0 <interface.json> <offlineDB.json>" >&2
+# Resolve offlineDB.json: env > bundle assets > repo fallback
+resolve_offlinedb() {
+  if [[ -n "${SEAMOS_OFFLINEDB_PATH:-}" && -f "${SEAMOS_OFFLINEDB_PATH}" ]]; then
+    echo "${SEAMOS_OFFLINEDB_PATH}"; return 0
+  fi
+  local script_dir
+  script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+  local skill_root
+  skill_root="$( cd "${script_dir}/.." && pwd )"
+  if [[ -f "${skill_root}/assets/offlineDB.json" ]]; then
+    echo "${skill_root}/assets/offlineDB.json"; return 0
+  fi
+  if [[ -n "${REPO_ROOT:-}" && -f "${REPO_ROOT}/ref/00_HeadlessFD/offlineDB.json" ]]; then
+    echo "${REPO_ROOT}/ref/00_HeadlessFD/offlineDB.json"; return 0
+  fi
+  return 1
+}
+
+if [[ $# -lt 1 ]]; then
+  echo "Usage: $0 <interface.json> [<offlineDB.json>]" >&2
   exit 64
 fi
 
 IFACE_JSON="$1"
-OFFLINEDB_JSON="$2"
+
+if [[ $# -ge 2 ]]; then
+  OFFLINEDB_JSON="$2"
+else
+  OFFLINEDB_JSON="$(resolve_offlinedb || true)"
+  if [[ -z "$OFFLINEDB_JSON" ]]; then
+    echo "ERROR: offlineDB.json not found. Checked:" >&2
+    echo "  - \$SEAMOS_OFFLINEDB_PATH (=${SEAMOS_OFFLINEDB_PATH:-<unset>})" >&2
+    echo "  - $(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/assets/offlineDB.json" >&2
+    echo "  - \$REPO_ROOT/ref/00_HeadlessFD/offlineDB.json (REPO_ROOT=${REPO_ROOT:-<unset>})" >&2
+    echo "Set SEAMOS_OFFLINEDB_PATH or run from seamos-everywhere repo." >&2
+    exit 1
+  fi
+fi
 
 if [[ ! -r "$OFFLINEDB_JSON" ]]; then
   echo "ERROR: offlineDB.json not readable: $OFFLINEDB_JSON" >&2

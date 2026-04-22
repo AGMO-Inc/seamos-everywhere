@@ -10,3 +10,5 @@ update-app-workspace/*
 manage-device-app-workspace/*
 
 ref
+.seamos-context.json.lock
+docker/fd-headless/prototype/*.log

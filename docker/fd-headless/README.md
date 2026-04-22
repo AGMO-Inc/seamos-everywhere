@@ -5,10 +5,10 @@ Linux-native FD Headless 8.6.0 wrapped in a Docker image for the seamos-everywhe
 ## Overview
 
 - **Base image**: `debian:bookworm-slim`
-- **Runtime**: OpenJDK 17 (headless) + GTK 3 minimal
+- **Runtime**: Eclipse Temurin 21 JRE + GTK 3 minimal
 - **Architecture**: `linux/amd64` single-arch
 - **Source binary**: Nevonex-supplied FD Headless 8.6.0-SNAPSHOT-260419.0754 (Eclipse RCP ELF)
-- **Package target**: AWS Public ECR — `public.ecr.aws/<alias>/seamos-fd-headless`
+- **Package target**: AWS Public ECR — `public.ecr.aws/g0j5z0m9/seamos-fd-headless`
 
 ---
 
@@ -196,7 +196,7 @@ docker images seamos-fd-headless:dev --format '{{.Size}}'
 ```bash
 # Pull from Public ECR (first run, online)
 docker pull --platform linux/amd64 \
-  public.ecr.aws/<alias>/seamos-fd-headless:latest
+  public.ecr.aws/g0j5z0m9/seamos-fd-headless:latest
 
 # Run (example: GENERATE_FSP)
 docker run --rm --platform linux/amd64 \
@@ -206,7 +206,7 @@ docker run --rm --platform linux/amd64 \
   -e FD_PROJECT_NAME=MyProject \
   -e FD_UI_TYPE="Custom UI" \
   -e FD_OPERATION=GENERATE_FSP \
-  public.ecr.aws/<alias>/seamos-fd-headless:latest
+  public.ecr.aws/g0j5z0m9/seamos-fd-headless:latest
 ```
 
 ---
@@ -216,7 +216,7 @@ docker run --rm --platform linux/amd64 \
 1. **온라인 호스트에서 번들 생성**:
    ```bash
    bash docker/fd-headless/scripts/build-offline-bundle.sh \
-     public.ecr.aws/<alias>/seamos-fd-headless:latest \
+     public.ecr.aws/g0j5z0m9/seamos-fd-headless:latest \
      ./dist
    ```
    생성물: `./dist/seamos-fd-headless-<tag>.tar` + `.sha256`.

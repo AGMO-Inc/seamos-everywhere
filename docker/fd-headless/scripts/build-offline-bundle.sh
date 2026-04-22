@@ -6,7 +6,7 @@
 #
 # Example:
 #   bash docker/fd-headless/scripts/build-offline-bundle.sh \
-#     public.ecr.aws/<alias>/seamos-fd-headless:latest \
+#     public.ecr.aws/g0j5z0m9/seamos-fd-headless:latest \
 #     ./dist
 #
 # Output:
@@ -21,7 +21,7 @@ set -euo pipefail
 
 if [[ $# -lt 1 ]]; then
   echo "Usage: $0 <image-tag> [output-dir]" >&2
-  echo "Example: $0 public.ecr.aws/<alias>/seamos-fd-headless:latest ./dist" >&2
+  echo "Example: $0 public.ecr.aws/g0j5z0m9/seamos-fd-headless:latest ./dist" >&2
   exit 64
 fi
 

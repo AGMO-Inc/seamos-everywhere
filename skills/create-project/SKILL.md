@@ -8,35 +8,118 @@ argument-hint: "--project-name <NAME> [--interface-json <PATH>] [--operation GEN
 
 # Create SeamOS Project (FSP)
 
-SeamOS 앱 개발의 첫 단계 — FD Headless 8.6.0 Docker 이미지를 사용해 새 FSP 프로젝트를 생성한다. UI type 은 "Custom UI" 로 고정되며, 지원 OS 는 Windows (WSL2 / Git Bash) / Linux / macOS (Apple Silicon 포함, Rosetta 2 필요) 이다.
+The first step in SeamOS app development — create a new FSP project using the FD Headless 8.6.0 Docker image. UI type is fixed to "Custom UI". Supported platforms: Windows (WSL2 / Git Bash), Linux, macOS (Apple Silicon included, requires Rosetta 2).
 
 ## Prerequisites
 
-- **Docker Desktop** (macOS/Windows) 또는 Docker Engine (Linux)
-- **macOS Apple Silicon 사용자**: Rosetta 2 활성화 필수
+- **Docker Desktop** (macOS/Windows) or Docker Engine (Linux)
+- **macOS Apple Silicon users**: Rosetta 2 must be enabled
   ```bash
   softwareupdate --install-rosetta --agree-to-license
   ```
-  Docker Desktop → Settings → Features in Development → **Use Rosetta for x86/amd64 emulation** 옵션 활성화 권장.
-- **Windows 사용자**: WSL2 또는 Git Bash 필수 — PowerShell / cmd 단독 실행 불가 (Bash / jq / shasum 의존).
-- **필수 호스트 도구**: `docker`, `jq`, `shasum` (또는 `sha256sum`), `timeout` (또는 macOS 의 `gtimeout` via `brew install coreutils`). `scripts/preflight.sh` 가 부재 시 차단.
-- **첫 실행 (온라인)**: `docker pull public.ecr.aws/<alias>/seamos-fd-headless:latest`. 완전 오프라인 환경에서는 별도 오프라인 번들 사용 (본문 Important Notes 참조).
+  Docker Desktop → Settings → Features in Development → **Use Rosetta for x86/amd64 emulation** recommended.
+- **Windows users**: WSL2 or Git Bash required — PowerShell / cmd alone is not supported (depends on Bash / jq / shasum).
+- **Required host tools**: `docker`, `jq`, `shasum` (or `sha256sum`), `timeout` (or macOS `gtimeout` via `brew install coreutils`). `scripts/preflight.sh` blocks execution if any are missing.
+- **First run (online)**: `docker pull public.ecr.aws/g0j5z0m9/seamos-fd-headless:latest`. For fully offline environments, use a separate offline bundle (see Important Notes).
 
 ## Asset Convention
 
-TODO E.3 will populate this section — 이 스킬이 기대하는 워크스페이스 구조와 `_interface.json` 위치.
+### Workspace Layout
+
+Project files are isolated under a dedicated **workspace directory**.
+
+- **Default path**: `$REPO_ROOT/create-project-workspace/{PROJECT_NAME}/`
+  (`$REPO_ROOT` is the `seamos-everywhere` repo root)
+- **Override**: specify an arbitrary path with the `--workspace <path>` flag
+
+> **Warning** — When running the skill from outside the repo directory, always provide `--workspace` explicitly. Without it, the default path is computed relative to the current directory and may pollute the repo tree.
+
+Workspace layout after success:
+
+```
+{WORKSPACE}/
+├── _interface.json          # Validated interface definition (passed to Docker)
+├── run.log                  # FD Headless stdout tee
+├── .project                 # FD project metadata
+├── .settings/               # FD settings directory
+└── *.arxml  |  *.xdm        # Generated FSP files (format depends on operation)
+```
+
+### Interface JSON
+
+Resolution rule for the interface definition file passed to Docker:
+
+| Scenario | Behavior |
+|----------|----------|
+| `--interface-json <path>` provided | Copies specified file to `{WORKSPACE}/_interface.json` and validates |
+| Omitted (interactive synthesis) | Synthesized in Step 2 and saved to `{WORKSPACE}/_interface.json` |
+
+Only files that pass `validate-interface-json.sh` are forwarded to the Docker container.
+
+### offlineDB Resolution
+
+During interactive synthesis (Step 2), the `offlineDB.json` element catalog is resolved in the following priority order:
+
+1. Environment variable `SEAMOS_OFFLINEDB_PATH` — absolute or relative path
+2. Skill bundle: `skills/create-project/assets/offlineDB.json`
+3. Repo copy: `ref/00_HeadlessFD/offlineDB.json` (when running inside the repo)
+
+### Output Artifacts
+
+On successful FSP generation, the following files are created under `{WORKSPACE}/`:
+
+```
+{WORKSPACE}/
+├── .project                 # FD project metadata
+├── .settings/               # FD internal settings
+├── <ProjectName>.arxml      # FSP file (AUTOSAR XDM or arxml)
+└── run.log                  # Full FD Headless execution log (stdout tee)
+```
+
+`run.log` is the primary artifact for determining Step 4 outcome and the first file to check during debugging.
+
+### Context Handoff
+
+On successful exit, atomically upserts the `last_project` field in `$REPO_ROOT/.seamos-context.json` (`flock` + `.tmp` + `mv`).
+
+Updated fields:
+
+```json
+{
+  "last_project": {
+    "name": "<PROJECT_NAME>",
+    "workspace": "/absolute/path/to/workspace",
+    "operation": "GENERATE_FSP",
+    "interface_json_sha256": "<sha256-of-_interface.json>",
+    "completed_at": "2025-01-01T00:00:00Z"
+  }
+}
+```
+
+`operation` is one of `GENERATE_FSP` | `GENERATE_SDK_APP` | `UPDATE_SDK_APP`. Downstream skills (`seamos-app-framework`, `build-fif`, `manage-device-app`, etc.) automatically read this file to load project context, so users do not need to re-enter the project path on each invocation.
+
+### Docker Image
+
+| Field | Value |
+|-------|-------|
+| Default image | `public.ecr.aws/g0j5z0m9/seamos-fd-headless:latest` |
+| Override (flag) | `--image-tag <ref>` |
+| Override (env var) | `SEAMOS_FD_IMAGE=<ref>` |
+| Local dev build | `--image-tag seamos-fd-headless:dev` |
+
+> ECR alias: `g0j5z0m9`
 
 ## Execution Flow
 
-### Step 1: 인자 파싱 & interface JSON 분기
+### Step 1: Argument parsing & interface JSON branching
 
-사용자가 `/create-project --project-name <name> [--interface-json <path>] ...` 형식으로 호출. `--interface-json` 이 **제공되었으면** 해당 파일을 그대로 사용한다(Step 2 스킵). **제공되지 않았으면** Step 2 로 진행하여 대화형 합성.
+User invokes `/create-project --project-name <name> [--interface-json <path>] ...`. If `--interface-json` is **provided**, that file is used as-is (Step 2 skipped). If **omitted**, proceed to Step 2 for interactive synthesis.
 
-### Step 2: 대화형 interface JSON 합성 (optional)
+### Step 2: Interactive interface JSON synthesis (optional)
 
-`--interface-json` 이 없으면 Claude 가 `references/interactive-prompts.md` 의 알고리즘에 따라 사용자와 대화하며 `<workspace>/_interface.json` 을 합성한다. 세부 절차(element 목록 제시 → interface 선택 → updateRate 설정 → 검증)는 `references/interactive-prompts.md` 참조.
+If `--interface-json` is absent, Claude synthesizes `<workspace>/_interface.json` interactively with the user following the algorithm in `references/interactive-prompts.md`. See that file for the detailed procedure (element list → interface selection → updateRate configuration → validation).
 
-### Step 3: create-project.sh 실행
+### Step 3: Run create-project.sh
 
 ```bash
 bash skills/create-project/scripts/create-project.sh \
@@ -46,48 +129,48 @@ bash skills/create-project/scripts/create-project.sh \
   --workspace <workspace>
 ```
 
-스크립트 내부 흐름:
-1. `preflight.sh` 호스트 도구 감지 → FAIL 시 즉시 중단
-2. 워크스페이스 존재 시 abort (또는 `--force-clean`/`--resume`)
-3. `validate-interface-json.sh` 로 interface JSON preflight 검증
-4. `TIMEOUT_BIN="$(command -v gtimeout || command -v timeout)"` 에 `docker run` 래핑 (600s)
-5. stdout 를 `<workspace>/run.log` 로 tee
+Internal script flow:
+1. `preflight.sh` detects host tools → aborts immediately on FAIL
+2. Aborts if workspace exists (or proceeds with `--force-clean` / `--resume`)
+3. Preflight validation of interface JSON via `validate-interface-json.sh`
+4. Wraps `docker run` with `TIMEOUT_BIN="$(command -v gtimeout || command -v timeout)"` (600s)
+5. Tees stdout to `<workspace>/run.log`
 
-### Step 4: 결과 판정
+### Step 4: Outcome determination
 
-`run.log` 를 grep 해 성공/실패/unknown/timeout 중 하나로 판정:
+Grep `run.log` to determine one of: success / failure / unknown / timeout:
 
-- `FD HEADLESS EXECUTION COMPLETED SUCCESSFULLY` → exit 0 (성공)
-- `FD HEADLESS EXECUTION EXITED WITH ERRORS` → exit 1 (FD 보고 실패)
-- 둘 다 없음 → exit 2 (unknown)
-- `timeout 124` → exit 3 (600s 초과)
+- `FD HEADLESS EXECUTION COMPLETED SUCCESSFULLY` → exit 0 (success)
+- `FD HEADLESS EXECUTION EXITED WITH ERRORS` → exit 1 (FD-reported failure)
+- Neither found → exit 2 (unknown)
+- `timeout 124` → exit 3 (exceeded 600s)
 
-### Step 5: `.seamos-context.json` 업데이트 & 핸드오프 안내
+### Step 5: Update `.seamos-context.json` & handoff guidance
 
-성공 시 프로젝트 루트 `.seamos-context.json` 에 `last_project` 필드 atomic upsert (flock + `.tmp` + `mv`). 후속 스킬(`build-fif`, `manage-device-app` 등)은 이 값을 자동 참조한다(자세한 내용은 `## Important Notes` 참조).
+On success, atomically upsert `last_project` field in project root `.seamos-context.json` (flock + `.tmp` + `mv`). Downstream skills (`build-fif`, `manage-device-app`, etc.) reference this value automatically (see `## Important Notes`).
 
 ## Important Notes
 
 ### Context handoff to downstream skills
 
-`create-project` 는 성공 종료 시 프로젝트 루트 `.seamos-context.json` 의 `last_project` 필드를 atomic upsert 한다. 후속 스킬(`build-fif`, `manage-device-app`, 기타 FD 체인)은 이 값을 자동 참조하므로, 사용자가 프로젝트 경로/이름을 매번 지정하지 않아도 된다.
+`create-project` atomically upserts the `last_project` field in project root `.seamos-context.json` on successful exit. Downstream skills (`build-fif`, `manage-device-app`, and other FD chain skills) reference this value automatically, so users do not need to specify the project path or name on each invocation.
 
-스키마 및 읽기 예시는 [`shared-references/seamos-context-cache.md`](../shared-references/seamos-context-cache.md#create-project) 의 `## create-project` 섹션 참조.
+For schema and read examples, see the `## create-project` section in [`shared-references/seamos-context-cache.md`](../shared-references/seamos-context-cache.md#create-project).
 
-재실행 시 다른 프로젝트를 가리키려면 `--project-name <other>` 로 새로 실행하면 `last_project` 가 갱신된다.
+To target a different project on re-run, execute again with `--project-name <other>` to update `last_project`.
 
 ### Offline (air-gapped) usage
 
-첫 실행은 `docker pull public.ecr.aws/<alias>/seamos-fd-headless:latest` 로 온라인 접근이 필요하다. 완전 오프라인/에어갭 환경에서는 `docker/fd-headless/scripts/build-offline-bundle.sh` 로 만든 번들(`.tar` + `.sha256`)을 전송받아 `docker load -i` 로 로드한 뒤 실행.
+The first run requires online access for `docker pull public.ecr.aws/g0j5z0m9/seamos-fd-headless:latest`. For fully offline/air-gapped environments, transfer a bundle (`.tar` + `.sha256`) built with `docker/fd-headless/scripts/build-offline-bundle.sh`, then load it with `docker load -i`.
 
-자세한 절차:
+Detailed procedure:
 ```bash
-# (온라인 호스트)
+# (online host)
 bash docker/fd-headless/scripts/build-offline-bundle.sh \
-  public.ecr.aws/<alias>/seamos-fd-headless:latest \
+  public.ecr.aws/g0j5z0m9/seamos-fd-headless:latest \
   ./dist
 
-# (에어갭 호스트)
+# (air-gapped host)
 shasum -a 256 -c seamos-fd-headless-<...>.tar.sha256
 docker load -i seamos-fd-headless-<...>.tar
 bash skills/create-project/scripts/create-project.sh --project-name <Name> --interface-json <...>
@@ -95,14 +178,14 @@ bash skills/create-project/scripts/create-project.sh --project-name <Name> --int
 
 ### Concurrency
 
-동일 프로젝트명으로 두 인보케이션을 동시에 실행하는 것은 지원되지 않는다. 워크스페이스 충돌 방지를 위해 기본 동작은 **기존 워크스페이스 존재 시 abort**. 재실행이 의도라면 `--force-clean` (rm -rf 후 재생성) 또는 `--resume` (기존 상태 유지) 중 하나를 명시.
+Running two invocations concurrently with the same project name is not supported. To prevent workspace conflicts, the default behavior is **abort if workspace exists**. If re-running is intentional, specify either `--force-clean` (rm -rf then recreate) or `--resume` (keep existing state).
 
-`.seamos-context.json` 은 `flock` + `.tmp`+`mv` 로 atomic 쓰기가 보장된다.
+`.seamos-context.json` writes are guaranteed atomic via `flock` + `.tmp` + `mv`.
 
 ### UI Type
 
-이 스킬은 UI Type 을 항상 `"Custom UI"` 로 고정한다. 다른 UI type (예: `"Standard UI"`) 이 필요하면 별도 스킬을 사용하거나 `docker/fd-headless/entrypoint.sh` 를 직접 실행하는 low-level 경로를 고려할 것.
+This skill always fixes UI Type to `"Custom UI"`. For other UI types (e.g., `"Standard UI"`), use a separate skill or consider the low-level path of running `docker/fd-headless/entrypoint.sh` directly.
 
 ### Redistribution approval
 
-Docker 이미지는 AWS Public ECR 로 배포되며, `LEGAL.md` 의 `STATUS: APPROVED` 가 CI 블로킹 게이트로 강제된다. 새 FD 바이너리 버전으로 교체 시 `docker/fd-headless/checksums.txt`, `skills/create-project/references/fd-version.json`, `LEGAL.md` 의 Binary 섹션을 함께 갱신한 뒤 CI 재빌드.
+The Docker image is distributed via AWS Public ECR, and `STATUS: APPROVED` in `LEGAL.md` is enforced as a CI blocking gate. When upgrading to a new FD binary version, update `docker/fd-headless/checksums.txt`, `skills/create-project/references/fd-version.json`, and the Binary section of `LEGAL.md` together, then rebuild CI.

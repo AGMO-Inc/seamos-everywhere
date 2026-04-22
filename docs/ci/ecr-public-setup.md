@@ -17,7 +17,7 @@ aws ecr-public create-repository \
   --catalog-data '{
     "description": "FD Headless for SeamOS app project creation (Linux/amd64)",
     "aboutText": "FD Headless 8.6.0-SNAPSHOT wrapped for the seamos-everywhere Claude Code plugin. See LEGAL.md and docker/fd-headless/README.md.",
-    "usageText": "docker pull public.ecr.aws/<alias>/seamos-fd-headless:latest",
+    "usageText": "docker pull public.ecr.aws/g0j5z0m9/seamos-fd-headless:latest",
     "architectures": ["x86-64"],
     "operatingSystems": ["Linux"]
   }'
@@ -31,14 +31,14 @@ aws ecr-public create-repository \
     "repositoryArn": "arn:aws:ecr-public::<account-id>:repository/seamos-fd-headless",
     "registryId": "<account-id>",
     "repositoryName": "seamos-fd-headless",
-    "repositoryUri": "public.ecr.aws/<alias>/seamos-fd-headless",
+    "repositoryUri": "public.ecr.aws/g0j5z0m9/seamos-fd-headless",
     "createdAt": "2026-04-22T..."
   },
   "catalogData": { ... }
 }
 ```
 
-`repositoryUri` 의 `<alias>` 를 기록해 두고 GitHub Actions 시크릿 `AWS_ECR_PUBLIC_ALIAS` 에 저장한다.
+`repositoryUri` 의 alias (`g0j5z0m9`) 를 GitHub Actions 시크릿 `AWS_ECR_PUBLIC_ALIAS` 에 저장한다.
 
 ## 2. 익명 Pull 권한 정책
 
@@ -72,8 +72,8 @@ Public ECR 은 기본적으로 익명 pull 을 허용하지만, 명시적 policy
 aws ecr-public get-login-password --region us-east-1 \
   | docker login --username AWS --password-stdin public.ecr.aws
 
-docker tag seamos-fd-headless:dev public.ecr.aws/<alias>/seamos-fd-headless:test
-docker push public.ecr.aws/<alias>/seamos-fd-headless:test
+docker tag seamos-fd-headless:dev public.ecr.aws/g0j5z0m9/seamos-fd-headless:test
+docker push public.ecr.aws/g0j5z0m9/seamos-fd-headless:test
 ```
 
 `aws ecr-public describe-images --repository-name seamos-fd-headless --region us-east-1` 으로 이미지 존재 확인.
@@ -82,7 +82,7 @@ docker push public.ecr.aws/<alias>/seamos-fd-headless:test
 
 ## 4. CI 연결
 
-생성된 `<alias>` 를 `.github/workflows/build-fd-image.yml` 의 시크릿 또는 env 에 주입:
+ECR alias (`g0j5z0m9`) 를 `.github/workflows/build-fd-image.yml` 의 시크릿 또는 env 에 주입:
 
 ```yaml
 env:
