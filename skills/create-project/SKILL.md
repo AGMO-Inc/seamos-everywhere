@@ -213,3 +213,25 @@ Fixed to `"Custom UI"`.
 ### Redistribution approval
 
 The Docker image is distributed via AWS Public ECR. `STATUS: APPROVED` in `LEGAL.md` is enforced as a CI blocking gate. When upgrading the FD binary, update `docker/fd-headless/checksums.txt`, `skills/create-project/references/fd-version.json`, and the Binary section of `LEGAL.md` together, then rebuild CI.
+
+### ECR image drift fallback
+
+If the published ECR `:latest` image lags behind repo source (e.g., entrypoint / Dockerfile changes not yet rebuilt via CI), symptoms include:
+
+- Stage 1B fails with "FD_CONFIG_PROP not recognized" or similar → entrypoint is stale.
+- JAVA codegen compilation fails inside the container (`javac`/`mvn` missing) → image was built on JRE instead of JDK.
+
+Workaround until maintainer re-triggers `.github/workflows/build-fd-image.yml`:
+
+```bash
+# Build locally from current repo source
+docker build --platform linux/amd64 \
+  -f docker/fd-headless/Dockerfile \
+  -t seamos-fd-headless:dev .
+
+# Invoke the skill with the override
+bash skills/create-project/scripts/create-project.sh \
+  --project-name <Name> \
+  --codegen-type JAVA \
+  --image-tag seamos-fd-headless:dev
+```

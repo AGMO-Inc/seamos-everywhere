@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1
-FROM --platform=linux/amd64 eclipse-temurin:21-jre-jammy
+# JDK (not JRE) is required: FD generates JAVA codegen that compiles via maven/javac inside the container.
+FROM --platform=linux/amd64 eclipse-temurin:21-jdk-jammy
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
