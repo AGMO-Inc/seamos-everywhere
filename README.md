@@ -6,8 +6,8 @@
 
 **Claude Code plugin for the SeamOS AI Native developer ecosystem**
 
-[![Version](https://img.shields.io/badge/version-0.4.2-blue.svg)](https://github.com/AGMO-Inc/seamos-everywhere/releases)
-[![Skills](https://img.shields.io/badge/skills-6-orange.svg)](#skills)
+[![Version](https://img.shields.io/badge/version-0.4.3-blue.svg)](https://github.com/AGMO-Inc/seamos-everywhere/releases)
+[![Skills](https://img.shields.io/badge/skills-7-orange.svg)](#skills)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey.svg)](LICENSE)
 [![Org](https://img.shields.io/badge/org-AGMO--Inc-green.svg)](https://github.com/AGMO-Inc)
 
@@ -244,11 +244,33 @@ Create a new SeamOS project (FSP + SDK/APP skeleton) via a Dockerized FD Headles
 
 ---
 
+### regen-sdk-app
+
+Re-run FD Headless `UPDATE_SDK_APP` on an existing project. Refreshes the generated SDK hooks + skeleton wiring while preserving your hand-written app code. Reads project parameters from `.seamos-context.json` (written by `create-project`), so no flags are usually needed.
+
+**Triggers:** `SDK 재생성` · `APP 재생성` · `SDK 업데이트` · `skeleton 갱신` · `FSP 바뀌었는데 앱에 반영` · `regen sdk` · `UPDATE_SDK_APP`
+
+```
+/seamos-everywhere:regen-sdk-app
+```
+
+**Flow:**
+1. Finds `USER_ROOT` (directory containing `.mcp.json`) and reads `.seamos-context.json`
+2. Derives `PROJECT_NAME`, `APP_PROJECT_NAME`, `CODEGEN_TYPE`, `APP_PROJECT_PATH` from `last_project.*` (CLI flags override)
+3. Writes `_config.prop` with the extra `app.project.path=/workspace/...` line required by UPDATE_SDK_APP (PDF §4)
+4. Runs `seamos-fd-headless:0.4.2` with `FD_OPERATION=UPDATE_SDK_APP`
+5. Updates context with `operation=UPDATE_SDK_APP` + `sdk_app_updated_at` (preserves `sdk_app_completed_at`)
+
+> When the **interface** itself changed, run `create-project --force-clean` first (to regenerate the FSP from the updated interface), then `regen-sdk-app`. This skill alone won't pick up interface.json changes — it reads the FSP as-is.
+
+---
+
 ### Skill comparison
 
 | Want to... | Skill |
 |---|---|
 | Create a new SeamOS project (FSP + SDK/APP skeleton) | `create-project` |
+| Merge FSP changes into an existing app (preserve user code) | `regen-sdk-app` |
 | Generate REST, WebSocket, DB, or Lifecycle framework code | `seamos-app-framework` |
 | Look up plugin interfaces and generate signal code | `seamos-plugins` |
 | Build a `.fif` deployment package | `build-fif` |
