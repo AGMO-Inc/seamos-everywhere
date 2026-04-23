@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>CustomUI Signal Monitor</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 1rem; color: #222; }
+    h1 { font-size: 1.2rem; margin: 0 0 .5rem; }
+    #status { display: inline-block; padding: 3px 10px; border-radius: 4px; background: #eee; font-size: .85rem; }
+    #status[data-state="open"] { background: #cfe9cf; }
+    #status[data-state="closed"] { background: #f5c7c7; }
+    #status[data-state="error"] { background: #f5c7c7; }
+    #topics { margin-top: 1rem; display: grid; gap: 6px; }
+    .topic-row { padding: 6px 10px; border: 1px solid #ccc; border-radius: 4px; font-family: ui-monospace, monospace; font-size: .85rem; display: grid; grid-template-columns: 180px 1fr auto; gap: 10px; align-items: center; }
+    .topic-row[data-live="true"] { background: #eafaea; border-color: #7cb97c; }
+    .topic-name { font-weight: 600; }
+    .topic-count { color: #666; font-size: .75rem; }
+    .topic-values { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .api-panel { margin: .8rem 0; padding: 10px 12px; border: 1px solid #9bb; border-radius: 6px; background: #f0f8f8; }
+    .api-panel h2 { font-size: 1rem; margin: 0 0 .5rem; }
+    .api-row { display: grid; grid-template-columns: 120px 1fr; gap: 8px; align-items: center; margin-bottom: 6px; }
+    .api-row label { font-size: .85rem; color: #444; }
+    .api-row input, .api-row select, .api-row textarea { font: inherit; padding: 4px 6px; border: 1px solid #bbb; border-radius: 3px; width: 100%; box-sizing: border-box; }
+    .api-row textarea { font-family: ui-monospace, monospace; font-size: .8rem; min-height: 48px; resize: vertical; }
+    .api-actions { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+    .api-actions button { padding: 4px 16px; cursor: pointer; }
+    .api-log { margin-top: 8px; max-height: 240px; overflow-y: auto; font-family: ui-monospace, monospace; font-size: .78rem; background: #fff; border: 1px solid #ddd; border-radius: 3px; padding: 6px; }
+    .api-entry { padding: 4px 6px; border-bottom: 1px solid #eee; }
+    .api-entry.pending { color: #888; }
+    .api-entry.done { color: #2a6a2a; }
+    .api-entry.failed { color: #a02525; }
+    .api-entry pre { margin: 2px 0 0 0; white-space: pre-wrap; word-break: break-all; }
+  </style>
+</head>
+<body>
+  <h1>CustomUI Signal Monitor</h1>
+  <span id="status" data-state="init">initializing…</span>
+
+  <div style="margin: .8rem 0; padding: 8px 12px; border: 1px solid #aac; border-radius: 6px; background: #f0f4ff;">
+    <strong>Publish Test — SetAllSectionValveOpen</strong>
+    <button id="pub-btn" style="margin-left: 10px; padding: 4px 16px; cursor: pointer;">Toggle OFF → ON</button>
+    <span id="pub-state" style="margin-left: 8px; font-weight: 600;">state: OFF</span>
+    <span id="pub-count" style="margin-left: 8px; color: #666; font-size: .85rem;"></span>
+    <div id="pub-log" style="margin-top: 4px; font-family: monospace; font-size: .8rem; color: #444; max-height: 80px; overflow-y: auto;"></div>
+  </div>
+
+  <div class="api-panel">
+    <h2>External API Request (Cloud proxy)</h2>
+    <div class="api-row">
+      <label for="api-url">URL</label>
+      <input id="api-url" type="text" placeholder="https://dev.marketplace-api.seamos.io/auth/login">
+    </div>
+    <div class="api-row">
+      <label for="api-method">Method</label>
+      <select id="api-method">
+        <option>GET</option><option selected>POST</option><option>PUT</option><option>PATCH</option><option>DELETE</option>
+      </select>
+    </div>
+    <div class="api-row">
+      <label for="api-headers">Headers (JSON)</label>
+      <textarea id="api-headers" placeholder='{"Content-Type":"application/json"}'>{"Content-Type":"application/json"}</textarea>
+    </div>
+    <div class="api-row">
+      <label for="api-body">Body (JSON)</label>
+      <textarea id="api-body" placeholder='{"email":"agmo@agmo.farm","password":"..."}'></textarea>
+    </div>
+    <div class="api-actions">
+      <button id="api-send">Send Request</button>
+      <button id="api-clear" type="button">Clear Log</button>
+      <span id="api-status" style="font-size: .8rem; color: #666;"></span>
+    </div>
+    <div class="api-log" id="api-log"></div>
+  </div>
+
+  <div id="topics"></div>
+
+  <script>
+    (async () => {
+      const statusEl = document.getElementById('status')
+      const topicsEl = document.getElementById('topics')
+      const rows = new Map()
+
+      function setStatus(text, state) {
+        statusEl.textContent = text
+        statusEl.dataset.state = state
+      }
+
+      // 1) 할당 포트 조회 — device FIF server reverse-proxies under /{featureId}/...
+      // so request must be RELATIVE (not '/get_assigned_ports') to preserve the
+      // prefix. Response: { "<internal_port>": "<external_port>" } where values
+      // are STRINGS (e.g. {"1456": "59449"}). Both strings and numbers accepted.
+      let wsPort
+      try {
+        setStatus('fetching get_assigned_ports…', 'init')
+        const res = await fetch('get_assigned_ports', { cache: 'no-store' })
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const ports = await res.json()
+        const raw = Object.values(ports)[0]
+        const parsed = typeof raw === 'number' ? raw : Number.parseInt(String(raw), 10)
+        if (!Number.isFinite(parsed)) throw new Error(`unexpected payload: ${JSON.stringify(ports)}`)
+        wsPort = parsed
+      } catch (e) {
+        setStatus(`port lookup failed: ${e.message}`, 'error')
+        return
+      }
+
+      // 2) WebSocket 연결
+      const wsUrl = `ws://${location.hostname}:${wsPort}/socket`
+      setStatus(`connecting ${wsUrl}…`, 'init')
+      const ws = new WebSocket(wsUrl)
+      ws.addEventListener('open', () => setStatus(`open ${wsUrl}`, 'open'))
+      ws.addEventListener('close', () => setStatus('ws closed', 'closed'))
+      ws.addEventListener('error', () => setStatus('ws error', 'error'))
+
+      // 2b) Publish 토글 버튼 — SetAllSectionValveOpen (BOOLEAN)
+      let pubCount = 0
+      let pubState = false
+      const pubBtn = document.getElementById('pub-btn')
+      const pubStateEl = document.getElementById('pub-state')
+      const pubCountEl = document.getElementById('pub-count')
+      const pubLog = document.getElementById('pub-log')
+      function renderPubState() {
+        pubStateEl.textContent = `state: ${pubState ? 'ON' : 'OFF'}`
+        pubBtn.textContent = pubState ? 'Toggle ON → OFF' : 'Toggle OFF → ON'
+      }
+      renderPubState()
+      pubBtn.addEventListener('click', () => {
+        if (ws.readyState !== WebSocket.OPEN) return
+        pubState = !pubState
+        ws.send(JSON.stringify({
+          action: 'publish',
+          interface: 'Implement.setAllSectionValveOpen',
+          value: pubState,
+        }))
+        renderPubState()
+      })
+
+      // 2c) External API Request 패널
+      const apiUrl = document.getElementById('api-url')
+      const apiMethod = document.getElementById('api-method')
+      const apiHeaders = document.getElementById('api-headers')
+      const apiBody = document.getElementById('api-body')
+      const apiSend = document.getElementById('api-send')
+      const apiClear = document.getElementById('api-clear')
+      const apiStatus = document.getElementById('api-status')
+      const apiLog = document.getElementById('api-log')
+      const pendingReqs = new Map() // correlation-id → log DOM entry
+      let apiCounter = 0
+
+      function parseJsonField(raw, fallback) {
+        const v = (raw || '').trim()
+        if (!v) return fallback
+        try { return JSON.parse(v) } catch { return null }
+      }
+
+      apiSend.addEventListener('click', () => {
+        if (ws.readyState !== WebSocket.OPEN) { apiStatus.textContent = 'ws not open'; return }
+        const url = (apiUrl.value || '').trim()
+        if (!url) { apiStatus.textContent = 'URL required'; return }
+        const headers = parseJsonField(apiHeaders.value, {})
+        if (headers === null) { apiStatus.textContent = 'Headers: invalid JSON'; return }
+        const body = parseJsonField(apiBody.value, {})
+        if (body === null) { apiStatus.textContent = 'Body: invalid JSON'; return }
+
+        apiCounter += 1
+        const cid = `UI-${Date.now()}-${apiCounter}`
+        const payload = {
+          'correlation-id': cid,
+          endPoint: url,
+          methodSelect: apiMethod.value,
+          reqHeader: headers,
+          reqBody: body,
+        }
+
+        const entry = document.createElement('div')
+        entry.className = 'api-entry pending'
+        entry.innerHTML = `<div><strong>[${new Date().toLocaleTimeString()}]</strong> ${apiMethod.value} ${url} <em>(cid=${cid})</em></div><pre>pending…</pre>`
+        apiLog.prepend(entry)
+        pendingReqs.set(cid, entry)
+
+        ws.send(JSON.stringify(payload))
+        apiStatus.textContent = `sent cid=${cid}`
+      })
+
+      apiClear.addEventListener('click', () => { apiLog.innerHTML = ''; pendingReqs.clear() })
+
+      // 3) 프레임 수신 → topic 별 row 업데이트 (가벼운 시각화)
+      ws.addEventListener('message', ev => {
+        let frame
+        try { frame = JSON.parse(ev.data) } catch { return }
+
+        // External API response 처리 (CloudDownloadListenerImpl envelope)
+        if (frame.type === 'external_api_response') {
+          const cid = frame['correlation-id'] || ''
+          const entry = pendingReqs.get(cid)
+          const pretty = JSON.stringify(frame.data, null, 2)
+          if (entry) {
+            entry.classList.remove('pending'); entry.classList.add('done')
+            entry.querySelector('pre').textContent = pretty
+            pendingReqs.delete(cid)
+          } else {
+            const orphan = document.createElement('div')
+            orphan.className = 'api-entry done'
+            orphan.innerHTML = `<div><strong>[${new Date().toLocaleTimeString()}]</strong> ← response <em>(cid=${cid || 'unknown'})</em></div><pre></pre>`
+            orphan.querySelector('pre').textContent = pretty
+            apiLog.prepend(orphan)
+          }
+          return
+        }
+
+        // Publish ack 처리
+        if (frame.action === 'publish_ack') {
+          pubCount++
+          pubCountEl.textContent = `sent: ${pubCount}`
+          const line = document.createElement('div')
+          line.textContent = `[${new Date().toLocaleTimeString()}] -> ${frame.topic} (${frame.status})`
+          pubLog.prepend(line)
+          return
+        }
+
+        const topic = frame && frame.topic
+        if (!topic) return
+        let row = rows.get(topic)
+        if (!row) {
+          row = document.createElement('div')
+          row.className = 'topic-row'
+          row.dataset.topic = topic
+          row.id = `topic-${topic.replace(/[^a-zA-Z0-9_-]/g, '_')}`
+          row.innerHTML = '<span class="topic-name"></span><span class="topic-values"></span><span class="topic-count"></span>'
+          topicsEl.appendChild(row)
+          rows.set(topic, { el: row, count: 0 })
+        }
+        const entry = rows.get(topic)
+        entry.count += 1
+        entry.el.dataset.live = 'true'
+        entry.el.querySelector('.topic-name').textContent = topic
+        entry.el.querySelector('.topic-count').textContent = `#${entry.count}`
+
+        // payload.PL 안의 첫 배열 미리보기 (최대 6 값)
+        let preview = ''
+        try {
+          const pl = frame.payload && frame.payload.PL
+          if (pl && typeof pl === 'object') {
+            const arrEntry = Object.values(pl).find(v => v && typeof v === 'object' && Array.isArray(v['0']))
+            if (arrEntry) preview = arrEntry['0'].slice(0, 6).map(v => typeof v === 'number' ? v.toFixed(2) : String(v)).join(', ')
+          }
+        } catch { /* ignore */ }
+        entry.el.querySelector('.topic-values').textContent = preview
+      })
+    })()
+  </script>
+</body>
+</html>

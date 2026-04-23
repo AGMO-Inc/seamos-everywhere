@@ -12,6 +12,7 @@ concept
 upload-app-workspace/*
 update-app-workspace/*
 manage-device-app-workspace/*
+skills/*-workspace/
 
 ref
 docker/fd-headless/prototype/*.log
