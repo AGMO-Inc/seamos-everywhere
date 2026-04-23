@@ -10,14 +10,21 @@ export TMPDIR=/tmp
 export FD_CONFIG_DIR=/tmp/fd-config
 mkdir -p "${HOME}" "${FD_CONFIG_DIR}"
 
-# Required: FD_INTERFACE_JSON
-: "${FD_INTERFACE_JSON:?FD_INTERFACE_JSON environment variable is required}"
-
 # Defaults
 : "${FD_WORKSPACE:=/workspace}"
-: "${FD_PROJECT_NAME:=PrototypeProject}"
-: "${FD_UI_TYPE:=Custom UI}"
 : "${FD_OPERATION:=GENERATE_FSP}"
+
+# Operation-aware required variable check
+case "${FD_OPERATION}" in
+  GENERATE_FSP)
+    : "${FD_INTERFACE_JSON:?FD_INTERFACE_JSON environment variable is required for GENERATE_FSP}"
+    : "${FD_PROJECT_NAME:=PrototypeProject}"
+    : "${FD_UI_TYPE:=Custom UI}"
+    ;;
+  GENERATE_SDK_APP|UPDATE_SDK_APP)
+    : "${FD_CONFIG_PROP:?FD_CONFIG_PROP environment variable is required for ${FD_OPERATION}}"
+    ;;
+esac
 
 # Load single-source-of-truth FD CLI args
 # fd-args.sh populates the FD_ARGS bash array using the env vars above
@@ -27,10 +34,17 @@ source /opt/fd/fd-args.sh
 
 echo "=== FD Headless (Linux) ==="
 echo "Workspace       : ${FD_WORKSPACE}"
-echo "Interface JSON  : ${FD_INTERFACE_JSON}"
 echo "Operation       : ${FD_OPERATION}"
-echo "Project Name    : ${FD_PROJECT_NAME}"
-echo "UI Type         : ${FD_UI_TYPE}"
+case "${FD_OPERATION}" in
+  GENERATE_FSP)
+    echo "Interface JSON  : ${FD_INTERFACE_JSON}"
+    echo "Project Name    : ${FD_PROJECT_NAME}"
+    echo "UI Type         : ${FD_UI_TYPE}"
+    ;;
+  GENERATE_SDK_APP|UPDATE_SDK_APP)
+    echo "Config Prop     : ${FD_CONFIG_PROP}"
+    ;;
+esac
 echo "Config Dir      : ${FD_CONFIG_DIR}"
 echo "FD_ARGS         : ${FD_ARGS[*]}"
 echo "==========================="

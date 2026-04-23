@@ -1,14 +1,17 @@
 .mcp.json
 .DS_Store
 .seamos-context.json
+.seamos-context.json.lock
+.seamos-context.json.lock.d/
 
 concept
-seamos-assets/
-create-project-workspace/*
+# Per-project gitignore is managed by create-project (Policy 1).
+# The root-level pattern below only prevents a stray seamos-assets/ from
+# landing in the repo. Project-specific patterns live in USER_ROOT/.gitignore.
+/seamos-assets/
 upload-app-workspace/*
 update-app-workspace/*
 manage-device-app-workspace/*
 
 ref
-.seamos-context.json.lock
 docker/fd-headless/prototype/*.log

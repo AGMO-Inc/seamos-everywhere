@@ -17,29 +17,35 @@
 
 ### Java Project
 ```
-<FEATURE_NAME>/                  <- PROJ_ROOT
-├── com.bosch.fsp.<name>/        <- FSP_PATH (FSP project)
-│   └── FDProject.props          <- Contains JAVA_APP_PATH="mvn|<app_name>"
-├── com.bosch.fsp.<name>.gen/    <- GEN_PATH (gen project, JAR source)
-│   └── pom.xml
-├── <name>/                      <- APP_PATH (app project)
-│   └── pom.xml
-└── seamos-assets/builds/           <- Build output
+<USER_ROOT>/                             <- directory containing .mcp.json
+├── .mcp.json
+├── seamos-assets/builds/                <- build output (BUILD_DIR)
+└── <FEATURE_NAME>/                      <- Docker /workspace mount (= project workspace)
+    └── <FEATURE_NAME>/                  <- FD_APP_ROOT (FD Eclipse auto depth)
+        ├── com.bosch.fsp.<name>/        <- FSP_PATH (FSP project; JAVA_APP_PATH="mvn|<app>")
+        ├── com.bosch.fsp.<name>.gen/    <- GEN_PATH (gen project, JAR source)
+        │   └── pom.xml
+        └── <FEATURE_NAME>_<APP_NAME>/   <- APP_PATH (app project)
+            └── pom.xml
 ```
 
 ### C++ Project
 ```
-<FEATURE_NAME>/                  <- PROJ_ROOT
-├── com.bosch.fsp.<name>/        <- FSP_PATH (FSP project)
-│   └── FDProject.props          <- Contains CPP_APP_PATH="cmake|<app_dir_name>"
-├── <name>_CPP_SDK/              <- SDK_PATH (C++ SDK, CMake-based)
-│   ├── CMakeLists.txt
-│   └── src-gen/
-├── <app_dir_name>/              <- APP_PATH (C++ app, CMake-based)
-│   ├── CMakeLists.txt
-│   └── src-gen/
-└── seamos-assets/builds/           <- Build output
+<USER_ROOT>/                             <- directory containing .mcp.json
+├── .mcp.json
+├── seamos-assets/builds/                <- build output (BUILD_DIR)
+└── <FEATURE_NAME>/                      <- Docker /workspace mount (= project workspace)
+    └── <FEATURE_NAME>/                  <- FD_APP_ROOT (FD Eclipse auto depth)
+        ├── com.bosch.fsp.<name>/        <- FSP_PATH (CPP_APP_PATH="cmake|<app_dir>")
+        ├── <FEATURE_NAME>_CPP_SDK/      <- SDK_PATH (C++ SDK, CMake)
+        │   ├── CMakeLists.txt
+        │   └── src-gen/
+        └── <app_dir_name>/              <- APP_PATH (C++ app, CMake)
+            ├── CMakeLists.txt
+            └── src-gen/
 ```
+
+`seamos-assets/builds/` lives at **USER_ROOT** so upload-app / update-app can pick up the FIF regardless of where the project workspace is.
 
 ## App Type Auto-Detection
 

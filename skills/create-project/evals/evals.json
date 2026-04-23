@@ -1,16 +1,23 @@
 [
   {
     "name": "generate_fsp_with_explicit_interface_json",
-    "description": "GENERATE_FSP with --interface-json pointing to references/interface-sample.json",
+    "description": "FSP-only run with --interface-json and --skip-sdk-app (public flag; I10 / IMP-3)",
     "input": {
       "command": "bash skills/create-project/scripts/create-project.sh",
       "args": [
         "--project-name", "EvalProject1",
         "--interface-json", "skills/create-project/references/interface-sample.json",
-        "--operation", "GENERATE_FSP",
-        "--workspace", "create-project-workspace/EvalProject1",
+        "--skip-sdk-app",
+        "--workspace", "/tmp/seamos-eval/EvalProject1",
         "--dry-run"
-      ]
+      ],
+      "setup": {
+        "cwd": "/tmp/seamos-eval",
+        "fixtures": [
+          "mkdir -p /tmp/seamos-eval",
+          "touch /tmp/seamos-eval/.mcp.json"
+        ]
+      }
     },
     "expected": {
       "exit_code": 0,
@@ -20,15 +27,22 @@
   },
   {
     "name": "generate_fsp_via_interactive_synthesis",
-    "description": "GENERATE_FSP without --interface-json — skill drives interactive synthesis with mocked user turns",
+    "description": "FSP-only run without --interface-json — skill drives interactive synthesis with mocked user turns",
     "input": {
       "command": "bash skills/create-project/scripts/create-project.sh",
       "args": [
         "--project-name", "EvalProject2",
-        "--operation", "GENERATE_FSP",
-        "--workspace", "create-project-workspace/EvalProject2",
+        "--skip-sdk-app",
+        "--workspace", "/tmp/seamos-eval/EvalProject2",
         "--dry-run"
       ],
+      "setup": {
+        "cwd": "/tmp/seamos-eval",
+        "fixtures": [
+          "mkdir -p /tmp/seamos-eval",
+          "touch /tmp/seamos-eval/.mcp.json"
+        ]
+      },
       "mock_user_turns": [
         "1",
         "1",
@@ -44,7 +58,7 @@
   },
   {
     "name": "reject_invalid_operation",
-    "description": "Invalid --operation XYZ triggers usage error",
+    "description": "Invalid --operation XYZ triggers usage error. --operation is advanced; mainline tests prefer --skip-sdk-app.",
     "input": {
       "command": "bash skills/create-project/scripts/create-project.sh",
       "args": [
@@ -52,7 +66,14 @@
         "--operation", "INVALID_OP",
         "--interface-json", "skills/create-project/references/interface-sample.json",
         "--dry-run"
-      ]
+      ],
+      "setup": {
+        "cwd": "/tmp/seamos-eval",
+        "fixtures": [
+          "mkdir -p /tmp/seamos-eval",
+          "touch /tmp/seamos-eval/.mcp.json"
+        ]
+      }
     },
     "expected": {
       "exit_code": 64,

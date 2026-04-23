@@ -1,7 +1,7 @@
 {
   "email": "sksjsksh22@gmail.com",
   "phoneNumber": "010-1234-1234",
-  "category": "CONSTRUCTION | AGRICULTURE | DRONE | ENTERTAINMENT | DIAGNOSTICS | MATERIALS",
+  "categories": ["AGRICULTURE"],
   "pricingType": "FREE | PAID",
   "countries": [1],
   "languages": [1],

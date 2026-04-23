@@ -1,14 +1,16 @@
 ---
 name: create-project
-description: Create a new SeamOS project (FSP) via FD Headless. Triggers: "프로젝트 생성", "create project", "FSP 생성", "skeleton generate", "SeamOS 프로젝트 만들어", "create-project".
+description: Create a new SeamOS project (FSP + SDK/APP skeleton) via FD Headless. Triggers — "프로젝트 생성", "create project", "앱 생성", "create app", "create-app", "SDK 생성", "create-project", "FSP 생성", "skeleton generate", "SeamOS 프로젝트 만들어".
 user-invocable: true
 allowed-tools: Read, Glob, Grep, Bash, Write, Edit
-argument-hint: "--project-name <NAME> [--interface-json <PATH>] [--operation GENERATE_FSP] [--workspace <PATH>] [--force-clean] [--resume]"
+argument-hint: "--project-name <NAME> [--skip-sdk-app] [--codegen-type JAVA|CPP] [--interface-json <PATH>] [--force-clean|--resume]"
 ---
 
-# Create SeamOS Project (FSP)
+# Create SeamOS Project (FSP + SDK/APP skeleton)
 
-The first step in SeamOS app development — create a new FSP project using the FD Headless 8.6.0 Docker image. UI type is fixed to "Custom UI". Supported platforms: Windows (WSL2 / Git Bash), Linux, macOS (Apple Silicon included, requires Rosetta 2).
+The first step in SeamOS app development. Generates an FSP project and — by default — the SDK / APP skeleton in a single invocation. Pass `--skip-sdk-app` to stop after FSP generation.
+
+UI type is fixed to `"Custom UI"`. Platforms: Windows (WSL2 / Git Bash), Linux, macOS (Apple Silicon included, requires Rosetta 2).
 
 ## Prerequisites
 
@@ -20,157 +22,171 @@ The first step in SeamOS app development — create a new FSP project using the 
   Docker Desktop → Settings → Features in Development → **Use Rosetta for x86/amd64 emulation** recommended.
 - **Windows users**: WSL2 or Git Bash required — PowerShell / cmd alone is not supported (depends on Bash / jq / shasum).
 - **Required host tools**: `docker`, `jq`, `shasum` (or `sha256sum`), `timeout` (or macOS `gtimeout` via `brew install coreutils`). `scripts/preflight.sh` blocks execution if any are missing.
-- **First run (online)**: `docker pull public.ecr.aws/g0j5z0m9/seamos-fd-headless:latest`. For fully offline environments, use a separate offline bundle (see Important Notes).
+- **First run (online)**: `docker pull public.ecr.aws/g0j5z0m9/seamos-fd-headless:0.4.2`. For fully offline environments, use a separate offline bundle (see Important Notes).
+
+## USER_ROOT
+
+All paths referenced by this skill are anchored at `USER_ROOT` — the directory containing `.mcp.json`. The script walks upward from `$PWD` to locate it. If no `.mcp.json` is found, the script exits `64`; set `SEAMOS_ALLOW_PWD_FALLBACK=1` to opt into using `$PWD` as a test-fixture escape hatch.
+
+USER_ROOT hosts:
+
+| Location | Purpose |
+|----------|---------|
+| `USER_ROOT/<PROJECT_NAME>/` | Workspace (FSP + SDK/APP output) |
+| `USER_ROOT/<PROJECT_NAME>-interface.json` | SSOT — user-editable interface definition |
+| `USER_ROOT/seamos-assets/` | Build + upload assets (shared across skills) |
+| `USER_ROOT/.seamos-context.json` | Shared project context (consumed by build-fif / upload-app / manage-device-app) |
 
 ## Asset Convention
 
 ### Workspace Layout
 
-Project files are isolated under a dedicated **workspace directory**.
+- **Default path**: `$USER_ROOT/{PROJECT_NAME}/`
+- **Override**: `--workspace <path>` — must be a subdirectory of `USER_ROOT`, not `USER_ROOT` itself.
 
-- **Default path**: `$REPO_ROOT/create-project-workspace/{PROJECT_NAME}/`
-  (`$REPO_ROOT` is the `seamos-everywhere` repo root)
-- **Override**: specify an arbitrary path with the `--workspace <path>` flag
-
-> **Warning** — When running the skill from outside the repo directory, always provide `--workspace` explicitly. Without it, the default path is computed relative to the current directory and may pollute the repo tree.
-
-Workspace layout after success:
+Layout after success (Stage 1A + 1B + 1C):
 
 ```
-{WORKSPACE}/
-├── _interface.json          # Validated interface definition (passed to Docker)
-├── run.log                  # FD Headless stdout tee
-├── .project                 # FD project metadata
-├── .settings/               # FD settings directory
-└── *.arxml  |  *.xdm        # Generated FSP files (format depends on operation)
+{USER_ROOT}/
+├── .mcp.json
+├── .seamos-context.json                 # context handoff
+├── {PROJECT_NAME}-interface.json        # SSOT (user-editable)
+├── seamos-assets/                       # bootstrapped in Stage 1C if absent
+│   ├── builds/                          # consumed by upload-app
+│   └── screenshots/
+└── {PROJECT_NAME}/                      # workspace (Docker /workspace mount)
+    ├── _interface.json                  # FD runtime copy (overwritten by SSOT on conflict)
+    ├── _config.prop                     # GENERATE_SDK_APP config
+    ├── run.log                          # Stage 1A stdout tee
+    ├── run-sdk-app.log                  # Stage 1B stdout tee
+    └── {PROJECT_NAME}/                  # FD Eclipse auto depth
+        ├── com.bosch.fsp.<name>/        # FSP
+        ├── com.bosch.fsp.<name>.gen/    # Java codegen
+        └── {PROJECT_NAME}_{APP_PROJECT_NAME}/  # SDK/APP skeleton
 ```
 
-### Interface JSON
+### Interface JSON (SSOT policy)
 
-Resolution rule for the interface definition file passed to Docker:
+`<USER_ROOT>/<PROJECT>-interface.json` is the SSOT (Single Source of Truth). `<WORKSPACE>/_interface.json` is a runtime copy FD reads.
 
 | Scenario | Behavior |
 |----------|----------|
-| `--interface-json <path>` provided | Copies specified file to `{WORKSPACE}/_interface.json` and validates |
-| Omitted (interactive synthesis) | Synthesized in Step 2 and saved to `{WORKSPACE}/_interface.json` |
+| `--interface-json <path>` provided | Copy into SSOT, then copy into workspace |
+| SSOT exists, no flag | Workspace is overwritten by SSOT on content mismatch |
+| Workspace only (no SSOT) | Workspace promoted to SSOT with stderr warning |
+| Neither exists | Claude flow must synthesize interactively before invoking |
 
-Only files that pass `validate-interface-json.sh` are forwarded to the Docker container.
+`--force-clean` wipes the workspace but **preserves** the SSOT, `seamos-assets/`, and `.seamos-context.json`.
 
 ### offlineDB Resolution
 
-During interactive synthesis (Step 2), the `offlineDB.json` element catalog is resolved in the following priority order:
-
-1. Environment variable `SEAMOS_OFFLINEDB_PATH` — absolute or relative path
-2. Skill bundle: `skills/create-project/assets/offlineDB.json`
-3. Repo copy: `ref/00_HeadlessFD/offlineDB.json` (when running inside the repo)
-
-### Output Artifacts
-
-On successful FSP generation, the following files are created under `{WORKSPACE}/`:
-
-```
-{WORKSPACE}/
-├── .project                 # FD project metadata
-├── .settings/               # FD internal settings
-├── <ProjectName>.arxml      # FSP file (AUTOSAR XDM or arxml)
-└── run.log                  # Full FD Headless execution log (stdout tee)
-```
-
-`run.log` is the primary artifact for determining Step 4 outcome and the first file to check during debugging.
+`SEAMOS_OFFLINEDB_PATH` env → `skills/create-project/assets/offlineDB.json` (bundle) → `ref/00_HeadlessFD/offlineDB.json` (repo fallback).
 
 ### Context Handoff
 
-On successful exit, atomically upserts the `last_project` field in `$REPO_ROOT/.seamos-context.json` (`flock` + `.tmp` + `mv`).
-
-Updated fields:
+On successful exit, atomically upserts `last_project` in `$USER_ROOT/.seamos-context.json` via `flock` (with `mkdir`-based fallback when `flock` is unavailable).
 
 ```json
 {
   "last_project": {
     "name": "<PROJECT_NAME>",
-    "workspace": "/absolute/path/to/workspace",
-    "operation": "GENERATE_FSP",
-    "interface_json_sha256": "<sha256-of-_interface.json>",
-    "completed_at": "2025-01-01T00:00:00Z"
+    "workspace_path": "<abs-path>",
+    "operation": "GENERATE_SDK_APP",
+    "image_tag": "public.ecr.aws/g0j5z0m9/seamos-fd-headless:0.4.2",
+    "interface_json_sha256": "<sha256>",
+    "created_at": "<ISO-8601 UTC>",
+    "fsp_completed_at": "<ISO-8601 UTC>",
+    "sdk_app_completed_at": "<ISO-8601 UTC>",
+    "app_project_name": "<APP_NAME>",
+    "codegen_type": "JAVA",
+    "app_project_path": "<USER_ROOT>/<PROJECT>/<PROJECT>/<PROJECT>_<APP_NAME>"
   }
 }
 ```
 
-`operation` is one of `GENERATE_FSP` | `GENERATE_SDK_APP` | `UPDATE_SDK_APP`. Downstream skills (`seamos-app-framework`, `build-fif`, `manage-device-app`, etc.) automatically read this file to load project context, so users do not need to re-enter the project path on each invocation.
+`fsp_completed_at` and `sdk_app_completed_at` are the two source-of-truth timestamps driving resume behavior. See [`shared-references/seamos-context-cache.md`](../shared-references/seamos-context-cache.md#create-project) for consumers.
 
 ### Docker Image
 
 | Field | Value |
 |-------|-------|
-| Default image | `public.ecr.aws/g0j5z0m9/seamos-fd-headless:latest` |
+| Pinned image | `public.ecr.aws/g0j5z0m9/seamos-fd-headless:0.4.2` |
 | Override (flag) | `--image-tag <ref>` |
 | Override (env var) | `SEAMOS_FD_IMAGE=<ref>` |
 | Local dev build | `--image-tag seamos-fd-headless:dev` |
 
+> Pinned tag: `:0.4.2` — rebuilt by maintainers on need. Use `--image-tag` to override.
 > ECR alias: `g0j5z0m9`
 
 ## Execution Flow
 
-### Step 1: Argument parsing & interface JSON branching
+### Stage 1A — GENERATE_FSP
 
-User invokes `/create-project --project-name <name> [--interface-json <path>] ...`. If `--interface-json` is **provided**, that file is used as-is (Step 2 skipped). If **omitted**, proceed to Step 2 for interactive synthesis.
+1. Resolve USER_ROOT via upward `.mcp.json` walk.
+2. Interface JSON SSOT resolution (see table above).
+3. `validate-interface-json.sh` gate.
+4. `docker run -v $USER_ROOT/$PROJECT_NAME:/workspace ... FD_OPERATION=GENERATE_FSP`.
+5. Record `fsp_completed_at` in `.seamos-context.json`.
 
-### Step 2: Interactive interface JSON synthesis (optional)
+### Stage 1B — GENERATE_SDK_APP (default; skipped with `--skip-sdk-app`)
 
-If `--interface-json` is absent, Claude synthesizes `<workspace>/_interface.json` interactively with the user following the algorithm in `references/interactive-prompts.md`. See that file for the detailed procedure (element list → interface selection → updateRate configuration → validation).
+6. Write `_config.prop` via `build-config-prop.sh`.
+7. `docker run ... FD_OPERATION=GENERATE_SDK_APP FD_CONFIG_PROP=/workspace/_config.prop`.
+8. Record `sdk_app_completed_at`, `codegen_type`, `app_project_path`, `app_project_name`.
 
-### Step 3: Run create-project.sh
+### Stage 1C — seamos-assets/ bootstrap + .gitignore append
 
-```bash
-bash skills/create-project/scripts/create-project.sh \
-  --project-name <name> \
-  --interface-json <workspace>/_interface.json \
-  --operation GENERATE_FSP \
-  --workspace <workspace>
+9. `mkdir -p $USER_ROOT/seamos-assets/{builds,screenshots}` (idempotent; no-op if present).
+10. Append the per-project sentinel block to `$USER_ROOT/.gitignore` (BEGIN/END pair validated; malformed state exits `2` with manual-repair guidance).
+
+## Resume Matrix
+
+Resume behavior is driven by `(workspace-exists, fsp_completed_at, sdk_app_completed_at)`:
+
+| # | Workspace | `fsp_completed_at` | `sdk_app_completed_at` | Action |
+|---|-----------|--------------------|------------------------|--------|
+| 1 | ✓ | ✓ | ✓ | `[resume] already complete` → exit 0 |
+| 2 | ✓ | ✓ | ✗ | Resume Stage 1B (skip 1A) |
+| 3 | ✓ | ✗ | — | Stale workspace — error, suggest `--force-clean` |
+| 4 | ✗ | ✓ | ✓ | State mismatch — error, suggest `--force-clean` |
+| 5 | ✗ | ✓ | ✗ | State mismatch — error, suggest `--force-clean` |
+| 6 | ✗ | ✗ | ✗ | Normal fresh run |
+
+`--force-clean` bypasses the matrix entirely (wipes workspace, preserves SSOT / seamos-assets / context).
+
+## `.gitignore` Auto-Management (Policy 1)
+
+On successful Stage 1C, `create-project.sh` appends / replaces a sentinel block to `$USER_ROOT/.gitignore`:
+
+```
+# BEGIN seamos-create-project:<PROJECT>
+<PROJECT>/_interface.json
+<PROJECT>/_config.prop
+<PROJECT>/IDT_OFFLINE_DATA/
+<PROJECT>/run*.log
+<PROJECT>/<PROJECT>/com.bosch.fsp.*/
+# END seamos-create-project:<PROJECT>
 ```
 
-Internal script flow:
-1. `preflight.sh` detects host tools → aborts immediately on FAIL
-2. Aborts if workspace exists (or proceeds with `--force-clean` / `--resume`)
-3. Preflight validation of interface JSON via `validate-interface-json.sh`
-4. Wraps `docker run` with `TIMEOUT_BIN="$(command -v gtimeout || command -v timeout)"` (600s)
-5. Tees stdout to `<workspace>/run.log`
-
-### Step 4: Outcome determination
-
-Grep `run.log` to determine one of: success / failure / unknown / timeout:
-
-- `FD HEADLESS EXECUTION COMPLETED SUCCESSFULLY` → exit 0 (success)
-- `FD HEADLESS EXECUTION EXITED WITH ERRORS` → exit 1 (FD-reported failure)
-- Neither found → exit 2 (unknown)
-- `timeout 124` → exit 3 (exceeded 600s)
-
-### Step 5: Update `.seamos-context.json` & handoff guidance
-
-On success, atomically upsert `last_project` field in project root `.seamos-context.json` (flock + `.tmp` + `mv`). Downstream skills (`build-fif`, `manage-device-app`, etc.) reference this value automatically (see `## Important Notes`).
+Build artifacts are ignored; user-editable skeleton sources (e.g., `<PROJECT>_<APP>/`) are committable. If the existing `.gitignore` contains malformed sentinel counts (e.g., `BEGIN=2, END=0`), the script exits `2` and asks for manual repair — it does not attempt auto-repair.
 
 ## Important Notes
 
-### Context handoff to downstream skills
+### `--operation` vs `--skip-sdk-app`
 
-`create-project` atomically upserts the `last_project` field in project root `.seamos-context.json` on successful exit. Downstream skills (`build-fif`, `manage-device-app`, and other FD chain skills) reference this value automatically, so users do not need to specify the project path or name on each invocation.
-
-For schema and read examples, see the `## create-project` section in [`shared-references/seamos-context-cache.md`](../shared-references/seamos-context-cache.md#create-project).
-
-To target a different project on re-run, execute again with `--project-name <other>` to update `last_project`.
+`--skip-sdk-app` is the public flag; `--operation` is advanced / hidden. When both are specified, `--operation` wins (with a stderr warning). `--skip-sdk-app` is semantically equivalent to `--operation GENERATE_FSP`.
 
 ### Offline (air-gapped) usage
 
-The first run requires online access for `docker pull public.ecr.aws/g0j5z0m9/seamos-fd-headless:latest`. For fully offline/air-gapped environments, transfer a bundle (`.tar` + `.sha256`) built with `docker/fd-headless/scripts/build-offline-bundle.sh`, then load it with `docker load -i`.
+First run requires `docker pull public.ecr.aws/g0j5z0m9/seamos-fd-headless:0.4.2`. For air-gapped usage, transfer an offline bundle built with `docker/fd-headless/scripts/build-offline-bundle.sh`, then `docker load -i`.
 
-Detailed procedure:
 ```bash
-# (online host)
+# online host
 bash docker/fd-headless/scripts/build-offline-bundle.sh \
-  public.ecr.aws/g0j5z0m9/seamos-fd-headless:latest \
+  public.ecr.aws/g0j5z0m9/seamos-fd-headless:0.4.2 \
   ./dist
 
-# (air-gapped host)
+# air-gapped host
 shasum -a 256 -c seamos-fd-headless-<...>.tar.sha256
 docker load -i seamos-fd-headless-<...>.tar
 bash skills/create-project/scripts/create-project.sh --project-name <Name> --interface-json <...>
@@ -178,14 +194,12 @@ bash skills/create-project/scripts/create-project.sh --project-name <Name> --int
 
 ### Concurrency
 
-Running two invocations concurrently with the same project name is not supported. To prevent workspace conflicts, the default behavior is **abort if workspace exists**. If re-running is intentional, specify either `--force-clean` (rm -rf then recreate) or `--resume` (keep existing state).
-
-`.seamos-context.json` writes are guaranteed atomic via `flock` + `.tmp` + `mv`.
+`.seamos-context.json` writes are atomic via `flock` (with a `mkdir`-based lock-directory fallback when `flock` is absent). Running two invocations concurrently on the same workspace is not supported — the state matrix and workspace-exists gate block overlap.
 
 ### UI Type
 
-This skill always fixes UI Type to `"Custom UI"`. For other UI types (e.g., `"Standard UI"`), use a separate skill or consider the low-level path of running `docker/fd-headless/entrypoint.sh` directly.
+Fixed to `"Custom UI"`.
 
 ### Redistribution approval
 
-The Docker image is distributed via AWS Public ECR, and `STATUS: APPROVED` in `LEGAL.md` is enforced as a CI blocking gate. When upgrading to a new FD binary version, update `docker/fd-headless/checksums.txt`, `skills/create-project/references/fd-version.json`, and the Binary section of `LEGAL.md` together, then rebuild CI.
+The Docker image is distributed via AWS Public ECR. `STATUS: APPROVED` in `LEGAL.md` is enforced as a CI blocking gate. When upgrading the FD binary, update `docker/fd-headless/checksums.txt`, `skills/create-project/references/fd-version.json`, and the Binary section of `LEGAL.md` together, then rebuild CI.

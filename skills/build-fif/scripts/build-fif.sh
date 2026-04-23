@@ -3,25 +3,202 @@
 # build-fif.sh — Build a deployable FIF package for SeamOS apps (Java & C++)
 #
 # Usage:
-#   ./build-fif.sh [project_root]
+#   ./build-fif.sh [user_root] [--project-name <NAME>] [--dry-run]
+#
+# The first positional argument is USER_ROOT (directory containing .mcp.json).
+# When omitted, USER_ROOT is discovered by walking upward from $PWD (v4 CIMP-1).
 #
 # Environment:
 #   NVX_DOCKER_IMAGE - Docker registry image (default: public.ecr.aws/g0j5z0m9/seamos/app-builder:8.5.0)
-#   FEATURE_NAME     - Override feature name (default: basename of project root)
+#   FEATURE_NAME     - Override feature/project name (legacy alias; --project-name preferred)
 #   APP_TYPE         - Force app type: "java" or "cpp" (default: auto-detect)
 #   ARCH_TYPE        - Target architecture: "aarch64", "arm32", "x86_64" (default: aarch64)
+#   SEAMOS_ALLOW_PWD_FALLBACK=1 — allow running without .mcp.json (test fixture escape hatch)
 #
 set -euo pipefail
 
-PROJ_ROOT="${1:-$PWD}"
-cd "$PROJ_ROOT"
+# ─── Shared utilities (v4 CIMP-1, CCR-1) ────────────────────────────────────
 
-FEATURE_NAME="${FEATURE_NAME:-$(basename "$PROJ_ROOT")}"
-FSP_PATH="$PROJ_ROOT/com.bosch.fsp.$FEATURE_NAME"
+# find_user_root — walk up from $PWD looking for .mcp.json (v4 CIMP-1)
+find_user_root() {
+  local dir
+  dir="$(pwd -P)"
+  while true; do
+    if [[ -f "$dir/.mcp.json" ]]; then
+      echo "$dir"
+      return 0
+    fi
+    if [[ "$dir" == "/" ]]; then
+      break
+    fi
+    dir="$(dirname "$dir")"
+  done
+  if [[ "${SEAMOS_ALLOW_PWD_FALLBACK:-0}" == "1" ]]; then
+    echo "WARN: no .mcp.json found from $PWD upward — using \$PWD as USER_ROOT (SEAMOS_ALLOW_PWD_FALLBACK=1)" >&2
+    pwd -P
+    return 0
+  fi
+  echo "ERROR: no .mcp.json found from $PWD upward — run inside a project that has .mcp.json at its root" >&2
+  return 64
+}
+
+# Deterministic PROJECT_NAME resolution (v4 CCR-1)
+#   1. Explicit --project-name flag (caller sets PROJECT_NAME_FLAG)
+#   2. $USER_ROOT/.seamos-context.json .last_project.name
+#   3. Single glob match under $USER_ROOT/*/*/com.bosch.fsp.*
+#   4. Error — multiple FSP projects or none found
+resolve_project_name() {
+  local user_root="$1"
+  local flag="${2:-}"
+
+  # 2. explicit flag wins
+  if [[ -n "$flag" ]]; then
+    echo "$flag"
+    return 0
+  fi
+
+  # 1. context — use last_project.name if set
+  if [[ -f "$user_root/.seamos-context.json" ]]; then
+    local ctx_name
+    ctx_name="$(jq -r '.last_project.name // empty' "$user_root/.seamos-context.json" 2>/dev/null || true)"
+    if [[ -n "$ctx_name" ]]; then
+      echo "$ctx_name"
+      return 0
+    fi
+  fi
+
+  # 3. single glob match across FSP directories
+  shopt -s nullglob
+  local matches=()
+  for fsp_dir in "$user_root"/*/*/com.bosch.fsp.*; do
+    [[ -d "$fsp_dir" ]] || continue
+    matches+=("$fsp_dir")
+  done
+  shopt -u nullglob
+
+  if [[ ${#matches[@]} -eq 1 ]]; then
+    local base
+    base="$(basename "${matches[0]}")"
+    echo "${base#com.bosch.fsp.}"
+    return 0
+  fi
+
+  if [[ ${#matches[@]} -eq 0 ]]; then
+    echo "ERROR: no FSP project found under $user_root — run create-project first or pass --project-name" >&2
+    return 64
+  fi
+
+  # 4. multiple
+  local list=""
+  for m in "${matches[@]}"; do
+    list+="$(basename "$m" | sed 's/^com\.bosch\.fsp\.//'), "
+  done
+  list="${list%, }"
+  echo "ERROR: multiple FSP projects found under $user_root: $list — pass --project-name <NAME> to disambiguate" >&2
+  return 64
+}
+
+# ─── Parse args ─────────────────────────────────────────────────────────────
+POSITIONAL_USER_ROOT=""
+PROJECT_NAME_FLAG=""
+DRY_RUN=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --project-name) PROJECT_NAME_FLAG="${2:-}"; shift 2 ;;
+    --dry-run)      DRY_RUN=1; shift ;;
+    --help|-h)
+      grep '^#' "${BASH_SOURCE[0]}" | head -30
+      exit 0
+      ;;
+    --*)
+      echo "ERROR: unknown flag: $1" >&2
+      exit 64
+      ;;
+    *)
+      if [[ -z "$POSITIONAL_USER_ROOT" ]]; then
+        POSITIONAL_USER_ROOT="$1"
+      else
+        echo "ERROR: unexpected positional argument: $1" >&2
+        exit 64
+      fi
+      shift
+      ;;
+  esac
+done
+
+# ─── Resolve USER_ROOT (v4 CIMP-1) ─────────────────────────────────────────
+if [[ -n "$POSITIONAL_USER_ROOT" ]]; then
+  if [[ ! -d "$POSITIONAL_USER_ROOT" ]]; then
+    echo "ERROR: USER_ROOT not a directory: $POSITIONAL_USER_ROOT" >&2
+    exit 64
+  fi
+  USER_ROOT="$(cd "$POSITIONAL_USER_ROOT" && pwd -P)"
+else
+  USER_ROOT="$(find_user_root)" || exit 64
+  USER_ROOT="$(cd "$USER_ROOT" && pwd -P)"
+fi
+
+# ─── Deterministic PROJECT_NAME resolution (v4 CCR-1) ──────────────────────
+# Deterministic PROJECT_NAME resolution (v4 CCR-1):
+#   1. --project-name <X>  → use flag
+#   2. $USER_ROOT/.seamos-context.json .last_project.name  → use context
+#   3. glob "$USER_ROOT/*/*/com.bosch.fsp.*" → single match, use it
+#   4. zero / multiple matches → error out with explicit guidance
+#
+# NOTE: "basename $USER_ROOT" fallback is intentionally removed — USER_ROOT
+#       directory name may differ from PROJECT_NAME (e.g. /tmp/seamos-e2e with
+#       com.bosch.fsp.MyApp). If user wishes to override via env FEATURE_NAME,
+#       they can; but deterministic resolution never falls back to basename.
+if [[ -n "${FEATURE_NAME:-}" ]]; then
+  # Legacy env var support — treat as explicit flag equivalent
+  PROJECT_NAME="$FEATURE_NAME"
+else
+  PROJECT_NAME="$(resolve_project_name "$USER_ROOT" "$PROJECT_NAME_FLAG")" || exit $?
+fi
+FEATURE_NAME="$PROJECT_NAME"
+
+# ─── Resolve FD_APP_ROOT / FSP_PATH (v4 CCR-1, v2 I7) ──────────────────────
+# Context-preferred FD_APP_ROOT: if $USER_ROOT/.seamos-context.json has
+# .last_project.app_project_path, its grandparent is FD_APP_ROOT.
+# Otherwise fall back to convention: $USER_ROOT/$PROJECT_NAME/$PROJECT_NAME.
+FD_APP_ROOT=""
+if [[ -f "$USER_ROOT/.seamos-context.json" ]]; then
+  APP_PROJECT_PATH="$(jq -r '.last_project.app_project_path // empty' "$USER_ROOT/.seamos-context.json" 2>/dev/null || true)"
+  if [[ -n "$APP_PROJECT_PATH" ]]; then
+    FD_APP_ROOT="$(dirname "$(dirname "$APP_PROJECT_PATH")")/$PROJECT_NAME"
+    # The above yields <USER_ROOT>/<PROJECT>/<PROJECT> which is what we want
+    FD_APP_ROOT="$(dirname "$APP_PROJECT_PATH")"
+  fi
+fi
+if [[ -z "$FD_APP_ROOT" ]]; then
+  FD_APP_ROOT="$USER_ROOT/$PROJECT_NAME/$PROJECT_NAME"
+fi
+
+PROJ_ROOT="$FD_APP_ROOT"  # legacy alias used by the rest of the script
+FSP_PATH="$FD_APP_ROOT/com.bosch.fsp.$FEATURE_NAME"
+
 CONTAINER="nvx-fif-gen-cntr"
 NVX_DOCKER_IMAGE="${NVX_DOCKER_IMAGE:-public.ecr.aws/g0j5z0m9/seamos/app-builder:8.5.0}"
 NVX_VERSION="${NVX_DOCKER_IMAGE##*:}"
 ARCH_TYPE="${ARCH_TYPE:-aarch64}"
+BUILD_DIR="$USER_ROOT/seamos-assets/builds"
+
+# ─── Dry-run output (v4 CIMP-4: expose key paths) ──────────────────────────
+if [[ $DRY_RUN -eq 1 ]]; then
+  echo "[dry-run] USER_ROOT=$USER_ROOT"
+  echo "[dry-run] PROJECT_NAME=$PROJECT_NAME"
+  echo "[dry-run] FEATURE_NAME=$FEATURE_NAME"
+  echo "[dry-run] FD_APP_ROOT=$FD_APP_ROOT"
+  echo "[dry-run] FSP_PATH=$FSP_PATH"
+  echo "[dry-run] BUILD_DIR=$BUILD_DIR"
+  echo "[dry-run] CONTEXT_FILE=$USER_ROOT/.seamos-context.json"
+  echo "[dry-run] NVX_DOCKER_IMAGE=$NVX_DOCKER_IMAGE"
+  echo "[dry-run] ARCH_TYPE=$ARCH_TYPE"
+  exit 0
+fi
+
+cd "$PROJ_ROOT"
 
 # ── Step 1: Docker check ──────────────────────────────────
 echo "[1/7] Checking Docker..."
@@ -276,14 +453,15 @@ docker exec "$CONTAINER" /usr/share/build.sh \
     "/usr/nvx/workspace/$FEATURE_NAME/$JAR_BASENAME" \
     "$ARCH_TYPE"
 
-# ── Step 7: Copy results to seamos-assets/builds/ ─────────
+# ── Step 7: Copy results to USER_ROOT/seamos-assets/builds/ ─────
+# BUILD_DIR is fixed at USER_ROOT/seamos-assets/builds (v4 CCR-1 / TODO 14)
+# so upload-app finds the FIF regardless of where the project workspace lives.
 echo "[7/7] Copying results..."
 
 # Extract from container to temp location first
 docker cp "$CONTAINER":/fif_output /tmp/nvx/fif_output
 
-# Copy .fif files to seamos-assets/builds/ for skill chaining (upload-app, update-app)
-BUILD_DIR="$PROJ_ROOT/seamos-assets/builds"
+# Copy .fif files to $BUILD_DIR for skill chaining (upload-app, update-app)
 mkdir -p "$BUILD_DIR"
 cp /tmp/nvx/fif_output/*.fif "$BUILD_DIR/" 2>/dev/null
 

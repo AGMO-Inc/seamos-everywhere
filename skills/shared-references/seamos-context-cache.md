@@ -6,9 +6,9 @@ The `.seamos-context.json` file is a shared context cache used by multiple SeamO
 
 ## File Location
 
-- **Path**: Workspace root (same directory as `seamos-assets/`, `skills/`, etc.)
+- **Path**: `<USER_ROOT>/.seamos-context.json` — USER_ROOT is the directory containing `.mcp.json`
 - **Filename**: `.seamos-context.json`
-- **Git status**: Not committed (should be in `.gitignore`)
+- **Git status**: Not committed (USER_ROOT/.gitignore should include this pattern)
 
 ## Cache File Structure
 
@@ -107,47 +107,74 @@ Example for `manage-device-app`:
 - **Non-critical**: The cache is optional for skill operation. If it doesn't exist or is invalid, skills should proceed with interactive selection.
 - **User cleanup**: Users can manually delete `.seamos-context.json` to reset cached selections at any time.
 
-## create-project
+## create-project (FSP + SDK/APP)
 
-`skills/create-project/` 스킬이 성공 종료 시 프로젝트 루트 `.seamos-context.json` 의 `last_project` 키를 atomic upsert (flock + `.tmp` + `mv`) 한다.
+`skills/create-project/` 스킬이 성공 종료 시 `$USER_ROOT/.seamos-context.json` 의 `last_project` 키를 atomic merge upsert 한다 (`flock` 또는 `mkdir`-폴백 + `.tmp` + `mv`). Stage 1A(FSP) 와 Stage 1B(SDK/APP) 단계 각각이 완료 시점에 관련 필드를 추가하고, 기존 필드는 보존된다.
 
-### Schema
+### Schema (최종 — FSP + SDK/APP 모두 완료 후)
 
 ```json
 {
   "last_project": {
     "name": "<project-name>",
-    "workspace_path": "<absolute-path>",
-    "operation": "GENERATE_FSP" | "GENERATE_SDK_APP" | "UPDATE_SDK_APP",
-    "image_tag": "public.ecr.aws/g0j5z0m9/seamos-fd-headless:<version>",
+    "workspace_path": "<abs-path>",
+    "operation": "GENERATE_SDK_APP",
+    "image_tag": "public.ecr.aws/g0j5z0m9/seamos-fd-headless:0.4.2",
     "interface_json_sha256": "<64-hex>",
-    "created_at": "<ISO-8601 UTC>"
+    "created_at": "<ISO-8601 UTC>",
+    "fsp_completed_at": "<ISO-8601 UTC>",
+    "sdk_app_completed_at": "<ISO-8601 UTC>",
+    "app_project_name": "<app-project-name>",
+    "codegen_type": "JAVA" | "CPP",
+    "app_project_path": "<USER_ROOT>/<PROJECT>/<PROJECT>/<PROJECT>_<APP_NAME>"
   }
 }
 ```
 
-- `name` — `--project-name` 인자 값
-- `workspace_path` — 생성된 FSP 프로젝트의 절대 경로 (스킬 실행 시 `--workspace` 값의 절대 경로)
-- `operation` — 수행된 FD 동작 (3종 중 하나)
-- `image_tag` — 실제 사용된 Docker 이미지 태그
-- `interface_json_sha256` — `<workspace>/_interface.json` 의 SHA256 (재실행 시 변경 감지용)
-- `created_at` — 성공 완료 시점 (UTC)
+### Field ownership
 
-### 후속 스킬에서 읽기
+| Field | Written at | Purpose |
+|-------|-----------|---------|
+| `name`, `workspace_path`, `image_tag`, `interface_json_sha256`, `created_at` | Stage 1A success | FSP bookkeeping |
+| `operation` | Both stages | Last executed FD operation |
+| `fsp_completed_at` | Stage 1A success | FSP completion timestamp (resume discriminator) |
+| `sdk_app_completed_at` | Stage 1B success | SDK/APP completion timestamp (resume discriminator) |
+| `app_project_name`, `codegen_type`, `app_project_path` | Stage 1B success | Maven / CMake target resolution |
 
-후속 스킬(`build-fif`, `manage-device-app`, 기타 FD 체인) 은 `.seamos-context.json` 의 `last_project` 값을 자동 참조하여 사용자가 프로젝트 경로를 매번 지정하지 않아도 되게 한다.
+### Resume decision matrix
+
+`create-project.sh` derives its resume behavior from the **pair** `(fsp_completed_at, sdk_app_completed_at)` together with workspace presence:
+
+| # | Workspace | `fsp_completed_at` | `sdk_app_completed_at` | Action |
+|---|-----------|--------------------|------------------------|--------|
+| 1 | ✓ | ✓ | ✓ | `already complete` → exit 0 |
+| 2 | ✓ | ✓ | ✗ | Resume Stage 1B |
+| 3 | ✓ | ✗ | — | Stale workspace error |
+| 4 | ✗ | ✓ | ✓ | State mismatch error |
+| 5 | ✗ | ✓ | ✗ | State mismatch error |
+| 6 | ✗ | ✗ | ✗ | Fresh run (Stage 1A → 1B) |
+
+`--force-clean` bypasses the matrix (workspace wiped, SSOT + seamos-assets + context preserved).
+
+### Downstream consumption
 
 ```bash
-# 최근 프로젝트 워크스페이스 읽기
-LAST_WS=$(jq -r '.last_project.workspace_path' .seamos-context.json)
+# Most-recently-used project
+NAME=$(jq -r '.last_project.name' $USER_ROOT/.seamos-context.json)
 
-# 최근 프로젝트 이름
-LAST_NAME=$(jq -r '.last_project.name' .seamos-context.json)
+# Build target (SDK/APP skeleton)
+APP_PATH=$(jq -r '.last_project.app_project_path' $USER_ROOT/.seamos-context.json)
 
-# interface JSON 해시 (변경 감지)
-LAST_IFACE_SHA=$(jq -r '.last_project.interface_json_sha256' .seamos-context.json)
+# Codegen type (Maven vs CMake)
+CODEGEN=$(jq -r '.last_project.codegen_type' $USER_ROOT/.seamos-context.json)
+
+# Readiness check
+jq -e '.last_project.fsp_completed_at and .last_project.sdk_app_completed_at' \
+  $USER_ROOT/.seamos-context.json
 ```
+
+`build-fif` uses `app_project_path`'s parent-of-parent as `FD_APP_ROOT`; `upload-app` does not read context directly (it scans `$USER_ROOT/seamos-assets/`).
 
 ### Concurrency
 
-`create-project.sh` 는 쓰기 시 `.seamos-context.json.lock` 으로 `flock` 상호배제 + `.tmp` 임시파일 후 `mv` 로 atomic 교체. 두 스킬 인보케이션이 동시에 실행되어도 JSON 파일은 항상 valid.
+Writes use `flock` when available, falling back to a `mkdir`-based lock directory (`.seamos-context.json.lock.d/`) for portability. Combined with `.tmp` + `mv`, the JSON file is always valid even under concurrent invocations.
