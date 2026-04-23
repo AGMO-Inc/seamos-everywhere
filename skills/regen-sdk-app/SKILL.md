@@ -25,7 +25,7 @@ Re-runs FD Headless in **UPDATE_SDK_APP** mode against an existing workspace. Bo
 1. **USER_ROOT**: a directory containing `.mcp.json` (discovered by upward traversal from `$PWD`).
 2. **Context populated**: `$USER_ROOT/.seamos-context.json` must have `last_project.{name, workspace_path, app_project_name, codegen_type, app_project_path, sdk_app_completed_at}`. This means `create-project` (including Stage 1B) was already executed successfully. If context is missing or stale, tell the user to run `create-project` first.
 3. **FSP current**: Whatever is in `<workspace>/<PROJECT>/com.bosch.fsp.<PROJECT>/` is taken as truth. This skill will NOT touch the FSP or re-validate interface JSON. If the user's reason for regen is "I changed interface.json", route them to `create-project --force-clean` first.
-4. **Docker**: running with the pinned image `seamos-fd-headless:0.4.2` (or local build / `--image-tag` override).
+4. **Docker**: running with the default image `seamos-fd-headless:latest` (or local build / `--image-tag` override).
 
 ## Execution Flow
 
@@ -119,7 +119,7 @@ No docker invocation, no disk mutation. Emit these path variables to stdout (mir
 [dry-run] CONFIG_PROP=...
 [dry-run] CONTEXT_FILE=...
 [dry-run] operation=UPDATE_SDK_APP codegen_type=<...>
-[dry-run] docker cmd: timeout 600 docker run --rm ... seamos-fd-headless:0.4.2
+[dry-run] docker cmd: timeout 600 docker run --rm ... seamos-fd-headless:latest
 ```
 
 ## Exit Codes

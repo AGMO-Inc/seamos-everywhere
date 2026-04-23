@@ -7,8 +7,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 
-# Pinned FD image (v4 CIMP-3). Override with --image-tag to test other tags.
-readonly FD_IMAGE_PINNED_TAG="public.ecr.aws/g0j5z0m9/seamos-fd-headless:0.4.2"
+# Default FD image tag. Maintainers push new builds to :latest.
+# Override with --image-tag (or SEAMOS_FD_IMAGE env) for reproducibility or local dev.
+readonly FD_IMAGE_PINNED_TAG="public.ecr.aws/g0j5z0m9/seamos-fd-headless:latest"
 
 # ─── Shared utility functions ──────────────────────────────────────────────
 

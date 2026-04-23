@@ -22,7 +22,7 @@ UI type is fixed to `"Custom UI"`. Platforms: Windows (WSL2 / Git Bash), Linux, 
   Docker Desktop → Settings → Features in Development → **Use Rosetta for x86/amd64 emulation** recommended.
 - **Windows users**: WSL2 or Git Bash required — PowerShell / cmd alone is not supported (depends on Bash / jq / shasum).
 - **Required host tools**: `docker`, `jq`, `shasum` (or `sha256sum`), `timeout` (or macOS `gtimeout` via `brew install coreutils`). `scripts/preflight.sh` blocks execution if any are missing.
-- **First run (online)**: `docker pull public.ecr.aws/g0j5z0m9/seamos-fd-headless:0.4.2`. For fully offline environments, use a separate offline bundle (see Important Notes).
+- **First run (online)**: `docker pull public.ecr.aws/g0j5z0m9/seamos-fd-headless:latest`. For fully offline environments, use a separate offline bundle (see Important Notes).
 
 ## USER_ROOT
 
@@ -92,7 +92,7 @@ On successful exit, atomically upserts `last_project` in `$USER_ROOT/.seamos-con
     "name": "<PROJECT_NAME>",
     "workspace_path": "<abs-path>",
     "operation": "GENERATE_SDK_APP",
-    "image_tag": "public.ecr.aws/g0j5z0m9/seamos-fd-headless:0.4.2",
+    "image_tag": "public.ecr.aws/g0j5z0m9/seamos-fd-headless:latest",
     "interface_json_sha256": "<sha256>",
     "created_at": "<ISO-8601 UTC>",
     "fsp_completed_at": "<ISO-8601 UTC>",
@@ -110,12 +110,12 @@ On successful exit, atomically upserts `last_project` in `$USER_ROOT/.seamos-con
 
 | Field | Value |
 |-------|-------|
-| Pinned image | `public.ecr.aws/g0j5z0m9/seamos-fd-headless:0.4.2` |
+| Default image | `public.ecr.aws/g0j5z0m9/seamos-fd-headless:latest` |
 | Override (flag) | `--image-tag <ref>` |
 | Override (env var) | `SEAMOS_FD_IMAGE=<ref>` |
 | Local dev build | `--image-tag seamos-fd-headless:dev` |
 
-> Pinned tag: `:0.4.2` — rebuilt by maintainers on need. Use `--image-tag` to override.
+> Default tag: `:latest` — maintainers push new builds to this tag. For reproducibility, override with `--image-tag` to a specific FD version or `@sha256:...` digest.
 > ECR alias: `g0j5z0m9`
 
 ## Execution Flow
@@ -178,12 +178,12 @@ Build artifacts are ignored; user-editable skeleton sources (e.g., `<PROJECT>_<A
 
 ### Offline (air-gapped) usage
 
-First run requires `docker pull public.ecr.aws/g0j5z0m9/seamos-fd-headless:0.4.2`. For air-gapped usage, transfer an offline bundle built with `docker/fd-headless/scripts/build-offline-bundle.sh`, then `docker load -i`.
+First run requires `docker pull public.ecr.aws/g0j5z0m9/seamos-fd-headless:latest`. For air-gapped usage, transfer an offline bundle built with `docker/fd-headless/scripts/build-offline-bundle.sh`, then `docker load -i`.
 
 ```bash
 # online host
 bash docker/fd-headless/scripts/build-offline-bundle.sh \
-  public.ecr.aws/g0j5z0m9/seamos-fd-headless:0.4.2 \
+  public.ecr.aws/g0j5z0m9/seamos-fd-headless:latest \
   ./dist
 
 # air-gapped host

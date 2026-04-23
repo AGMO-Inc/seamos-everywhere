@@ -119,7 +119,7 @@ Example for `manage-device-app`:
     "name": "<project-name>",
     "workspace_path": "<abs-path>",
     "operation": "GENERATE_SDK_APP | UPDATE_SDK_APP",
-    "image_tag": "public.ecr.aws/g0j5z0m9/seamos-fd-headless:0.4.2",
+    "image_tag": "public.ecr.aws/g0j5z0m9/seamos-fd-headless:latest",
     "interface_json_sha256": "<64-hex>",
     "created_at": "<ISO-8601 UTC>",
     "fsp_completed_at": "<ISO-8601 UTC>",

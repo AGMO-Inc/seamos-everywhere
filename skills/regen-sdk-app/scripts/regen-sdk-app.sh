@@ -16,7 +16,7 @@
 #                               context; required if context missing)
 #   --process-timer DUR         app.process.timer (default from context or 1s)
 #   --mvn-args STR              Extra Maven args (default from context or empty)
-#   --image-tag TAG             Docker image (default: seamos-fd-headless:0.4.2)
+#   --image-tag TAG             Docker image (default: seamos-fd-headless:latest)
 #   --dry-run                   Print resolved paths + docker cmd, do not run
 #   --help                      Show this help
 set -euo pipefail
@@ -81,7 +81,7 @@ CODEGEN_TYPE=""
 APP_PROJECT_PATH=""   # host path
 PROCESS_TIMER=""
 MVN_ARGS=""
-IMAGE_TAG="seamos-fd-headless:0.4.2"
+IMAGE_TAG="seamos-fd-headless:latest"
 DRY_RUN=0
 
 while [[ $# -gt 0 ]]; do
