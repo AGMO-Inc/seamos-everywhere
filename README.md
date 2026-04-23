@@ -6,8 +6,8 @@
 
 **Claude Code plugin for the SeamOS AI Native developer ecosystem**
 
-[![Version](https://img.shields.io/badge/version-0.4.1-blue.svg)](https://github.com/AGMO-Inc/seamos-everywhere/releases)
-[![Skills](https://img.shields.io/badge/skills-7-orange.svg)](#skills)
+[![Version](https://img.shields.io/badge/version-0.4.2-blue.svg)](https://github.com/AGMO-Inc/seamos-everywhere/releases)
+[![Skills](https://img.shields.io/badge/skills-6-orange.svg)](#skills)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey.svg)](LICENSE)
 [![Org](https://img.shields.io/badge/org-AGMO--Inc-green.svg)](https://github.com/AGMO-Inc)
 
@@ -59,10 +59,11 @@ After installation, configure your SDM credentials:
 
 ## Asset Directory
 
-Skills that interact with the marketplace expect a `seamos-assets/` directory at your project root. This is where app metadata, images, and build packages live.
+Skills that interact with the marketplace expect a `seamos-assets/` directory at your project root — where `{project root}` is **USER_ROOT**, the directory containing `.mcp.json`. `create-project` bootstraps this directory automatically when it completes.
 
 ```
-{project root}/
+{project root}/                <- USER_ROOT = directory containing .mcp.json
+├── .mcp.json
 └── seamos-assets/
     ├── config.json            # App metadata (auto-generated on first upload)
     ├── mainImage.png          # Main image (required for upload-app)
@@ -218,9 +219,9 @@ Build a deployable FIF (Feature Installation File) package using Docker. Support
 
 ### create-project
 
-Create a new SeamOS project (FSP) via a Dockerized FD Headless binary. Supports natural-language interface selection against the offlineDB catalog, or direct consumption of an `fd_user_selected_interface.json`. UI type is fixed to `Custom UI`.
+Create a new SeamOS project (FSP + SDK/APP skeleton) via a Dockerized FD Headless binary. FSP generation and SDK/APP skeleton generation run in a single invocation by default; pass `--skip-sdk-app` for FSP-only. UI type is fixed to `Custom UI`.
 
-**Triggers:** `프로젝트 생성` · `create project` · `FSP 생성` · `skeleton generate` · `SeamOS 프로젝트 만들어`
+**Triggers:** `프로젝트 생성` · `create project` · `앱 생성` · `create app` · `create-app` · `SDK 생성` · `FSP 생성` · `skeleton generate`
 
 ```
 /seamos-everywhere:create-project
@@ -228,15 +229,16 @@ Create a new SeamOS project (FSP) via a Dockerized FD Headless binary. Supports 
 
 **Flow:**
 1. Preflight check — host tools (`docker`, `jq`, `shasum`, `timeout`) + Apple Silicon Rosetta 2 detection
-2. Interactive interface JSON synthesis from `offlineDB.json` (or accepts `--interface-json <path>`)
+2. Interactive interface JSON synthesis from `offlineDB.json` (or accepts `--interface-json <path>`; promoted to `$USER_ROOT/<PROJECT>-interface.json` SSOT)
 3. Validates the synthesized JSON before any container run
-4. Runs `public.ecr.aws/g0j5z0m9/seamos-fd-headless` image with the chosen FD operation
-5. Detects success/failure via stdout grep, writes `.seamos-context.json` atomically for downstream skills
+4. Stage 1A — runs `public.ecr.aws/g0j5z0m9/seamos-fd-headless:0.4.2` with `GENERATE_FSP`
+5. Stage 1B — writes `_config.prop` then runs the image with `GENERATE_SDK_APP` (unless `--skip-sdk-app`)
+6. Stage 1C — bootstraps `$USER_ROOT/seamos-assets/{builds,screenshots}/`, upserts `.seamos-context.json` atomically, appends the per-project sentinel block to `$USER_ROOT/.gitignore`
 
 | Feature | Details |
 |---------|---------|
-| FD operations | `GENERATE_FSP`, `GENERATE_SDK_APP`, `UPDATE_SDK_APP` |
-| Image | `linux/amd64` — compressed ~293 MB / uncompressed ~934 MB |
+| FD operations | `GENERATE_FSP` + `GENERATE_SDK_APP` one-shot (`GENERATE_SDK_APP` runs as internal Stage 1B) |
+| Image | Pinned `seamos-fd-headless:0.4.2` — `linux/amd64`, ~293 MB compressed |
 | Offline | `docker save`/`load` air-gapped bundle supported |
 | Blocking gates | supply-chain (SHA256) · legal (LEGAL.md) · compat (preflight) · validity (JSON validator) |
 
@@ -246,7 +248,7 @@ Create a new SeamOS project (FSP) via a Dockerized FD Headless binary. Supports 
 
 | Want to... | Skill |
 |---|---|
-| Create a new SeamOS project (FSP) | `create-project` |
+| Create a new SeamOS project (FSP + SDK/APP skeleton) | `create-project` |
 | Generate REST, WebSocket, DB, or Lifecycle framework code | `seamos-app-framework` |
 | Look up plugin interfaces and generate signal code | `seamos-plugins` |
 | Build a `.fif` deployment package | `build-fif` |

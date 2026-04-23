@@ -18,18 +18,20 @@ Before running this skill, the user's project must have:
 
 ## Asset Convention
 
-The skill expects files in this structure:
+`{project root}` below is **USER_ROOT** — the directory containing `.mcp.json`. The skill expects files in this structure:
+
 ```
-{project root}/
+{project root}/                <- USER_ROOT (directory containing .mcp.json)
+├── .mcp.json
 └── seamos-assets/
     ├── config.json            # App metadata (auto-generated on first run)
     ├── mainImage.png          # Main image (required)
-    ├── iconImage.png          # Icon image (required)  
+    ├── iconImage.png          # Icon image (required)
     ├── screenshots/           # Screenshots (at least 1 required)
     │   ├── screenshot0.png
     │   └── screenshot1.png
     └── builds/                # App packages (at least 1 required)
-        └── {feuType}.fif      # e.g., AUTO-IT_RV-C1000.fif
+        └── {feuType}.fif      # e.g., AUTO-IT_RV-C1000.fif (produced by build-fif)
 ```
 
 ## Execution Flow
@@ -142,11 +144,24 @@ If the MCP schema was unavailable (Step 1A failed), skip the diff and proceed wi
 #### 3B-2. Validate Required Fields
 
 1. Check required fields are present and non-empty:
-   - `email`, `phoneNumber`, `category`, `pricingType`, `countries`, `languages`, `info`, `variants`
+   - `email`, `phoneNumber`, `categories`, `pricingType`, `countries`, `languages`, `info`, `variants`
+   - `categories` must be a non-empty array of enum values (`AGRICULTURE | CONSTRUCTION | DRONE | ENTERTAINMENT | DIAGNOSTICS | MATERIALS`)
    - Each item in `info` must have `locale`, `appName`, `shortDescription`, `detailDescription`
    - Each item in `variants` must have `feuType`, `version`, and `info` array (each with `locale`, `title`, `updateDescription`)
 2. Cross-check: each `feuType` in variants should have a matching `.fif` file in `builds/`
 3. If validation fails → show which fields are missing/invalid and stop
+
+#### 3B-2a. Legacy `category` field migration hint
+
+If the existing `config.json` contains a legacy `category` (string) instead of `categories` (array), **do not auto-convert**. Instead, surface this guidance and stop:
+
+```
+config.json has legacy `category` (string). API now expects `categories` (array of strings).
+Migration: replace  "category": "AGRICULTURE"  with  "categories": ["AGRICULTURE"].
+No automatic conversion is performed — please update manually and rerun.
+```
+
+Rationale: the schema change is user-visible (multi-category support). Automatic conversion would silently lose the user's intent if they originally meant multiple domains or a different default.
 
 #### 3B-3. Confirm Upload
 
@@ -163,7 +178,7 @@ If validation passes, show summary:
 
 ### 메타데이터 (config.json)
 - 앱 이름: {info[0].appName}
-- 카테고리: {category}
+- 카테고리: {categories | join(", ")}
 - 가격: {pricingType}
 - 기기: {variants[0].feuType} v{variants[0].version}
 - 이메일: {email}
