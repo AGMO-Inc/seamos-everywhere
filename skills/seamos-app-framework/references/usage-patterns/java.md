@@ -93,6 +93,9 @@ public class UIWebsocketEndPoint extends AbstractWebsocketEndPoint {
 UIWebServiceProvider.getInstance().openWebsocket("/socket", UIWebsocketEndPoint.getInstance());
 ```
 
+> Browser-side counterpart (port discovery, frame protocol, cloud proxy):
+> see the `seamos-customui-client` skill.
+
 ## DB Persistence
 
 > **Note:** NEVONEX apps run in runc containers with ephemeral filesystems. App updates destroy all container-internal files. Use `FCALFileProvider` to persist DB files to a host-mounted path that survives container restarts.
