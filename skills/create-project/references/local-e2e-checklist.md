@@ -68,15 +68,21 @@ Tags: `[docs, test, requires-docker, manual]`. These steps require Docker and a 
 - [ ] **U6. Force-clean preserves SSOT and seamos-assets** — `bash <repo>/skills/create-project/scripts/create-project.sh --project-name MyE2E --force-clean --interface-json <...>`
   - Expected: workspace regenerated, `/tmp/seamos-e2e/seamos-assets/` intact, `/tmp/seamos-e2e/MyE2E-interface.json` SSOT still exists
 
+- [ ] **U7. regen-sdk-app refreshes skeleton** (after U2) — touch a file under `<workspace>/<PROJECT>/<PROJECT>_<APP>/src/...` to simulate user edits, then run `cd /tmp/seamos-e2e && bash <repo>/skills/regen-sdk-app/scripts/regen-sdk-app.sh`
+  - Expected: UPDATE_SDK_APP completes (`FD HEADLESS EXECUTION COMPLETED SUCCESSFULLY` in `run-sdk-app-update.log`), `.seamos-context.json .last_project.operation == "UPDATE_SDK_APP"`, `sdk_app_updated_at` populated, `sdk_app_completed_at` preserved from U2, user-added file still present
+
 ## FAST_CHECK (Docker-free smoke)
 
-Set `FAST_CHECK=1` to skip Docker-dependent steps (U2, U4, U6) and substitute the Docker-free smoke harness, which exercises the same path-resolution / context-handoff logic via `--dry-run`:
+Set `FAST_CHECK=1` to skip Docker-dependent steps (U2, U4, U6, U7) and substitute the Docker-free smoke harnesses:
 
 ```bash
 FAST_CHECK=1 bash <repo>/skills/create-project/evals/smoke.sh
+FAST_CHECK=1 bash <repo>/skills/regen-sdk-app/evals/smoke.sh
 ```
 
-The smoke script (v4 CIMP-4) verifies that `create-project.sh --dry-run` and `build-fif.sh --dry-run` emit the expected `USER_ROOT=`, `PROJECT_NAME=`, `WORKSPACE=`, `FSP_PATH=`, `BUILD_DIR=`, and `CONTEXT_FILE=` variables — without any docker invocation — and asserts each value matches the fixture.
+`create-project/evals/smoke.sh` (v4 CIMP-4) verifies create-project + build-fif dry-run emits `USER_ROOT=`, `PROJECT_NAME=`, `WORKSPACE=`, `FSP_PATH=`, `BUILD_DIR=`, `CONTEXT_FILE=`.
+
+`regen-sdk-app/evals/smoke.sh` verifies (A) missing-context errors with exit 64, (B) partial-context enumerates missing fields, (C) full-context dry-run emits all 10 path vars + `FD_OPERATION=UPDATE_SDK_APP`, (D) upward `.mcp.json` search resolves `USER_ROOT` from a nested subdir, (E) `build-config-prop.sh` emits `app.project.path=` only when `--app-project-path` is passed.
 
 ## Notes
 

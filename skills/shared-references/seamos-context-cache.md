@@ -111,19 +111,20 @@ Example for `manage-device-app`:
 
 `skills/create-project/` 스킬이 성공 종료 시 `$USER_ROOT/.seamos-context.json` 의 `last_project` 키를 atomic merge upsert 한다 (`flock` 또는 `mkdir`-폴백 + `.tmp` + `mv`). Stage 1A(FSP) 와 Stage 1B(SDK/APP) 단계 각각이 완료 시점에 관련 필드를 추가하고, 기존 필드는 보존된다.
 
-### Schema (최종 — FSP + SDK/APP 모두 완료 후)
+### Schema (최종 — FSP + SDK/APP 모두 완료 후, regen-sdk-app 반영)
 
 ```json
 {
   "last_project": {
     "name": "<project-name>",
     "workspace_path": "<abs-path>",
-    "operation": "GENERATE_SDK_APP",
+    "operation": "GENERATE_SDK_APP | UPDATE_SDK_APP",
     "image_tag": "public.ecr.aws/g0j5z0m9/seamos-fd-headless:0.4.2",
     "interface_json_sha256": "<64-hex>",
     "created_at": "<ISO-8601 UTC>",
     "fsp_completed_at": "<ISO-8601 UTC>",
     "sdk_app_completed_at": "<ISO-8601 UTC>",
+    "sdk_app_updated_at": "<ISO-8601 UTC>",
     "app_project_name": "<app-project-name>",
     "codegen_type": "JAVA" | "CPP",
     "app_project_path": "<USER_ROOT>/<PROJECT>/<PROJECT>/<PROJECT>_<APP_NAME>"
@@ -136,10 +137,11 @@ Example for `manage-device-app`:
 | Field | Written at | Purpose |
 |-------|-----------|---------|
 | `name`, `workspace_path`, `image_tag`, `interface_json_sha256`, `created_at` | Stage 1A success | FSP bookkeeping |
-| `operation` | Both stages | Last executed FD operation |
+| `operation` | Both stages + regen-sdk-app | Last executed FD operation |
 | `fsp_completed_at` | Stage 1A success | FSP completion timestamp (resume discriminator) |
-| `sdk_app_completed_at` | Stage 1B success | SDK/APP completion timestamp (resume discriminator) |
-| `app_project_name`, `codegen_type`, `app_project_path` | Stage 1B success | Maven / CMake target resolution |
+| `sdk_app_completed_at` | Stage 1B success | SDK/APP **first** completion timestamp (resume discriminator; preserved across re-runs) |
+| `sdk_app_updated_at` | `regen-sdk-app` success (UPDATE_SDK_APP) | Last UPDATE_SDK_APP run — refreshed each time skeleton is merged |
+| `app_project_name`, `codegen_type`, `app_project_path` | Stage 1B success | Maven / CMake target resolution (read by `regen-sdk-app` and `build-fif`) |
 
 ### Resume decision matrix
 
@@ -174,6 +176,8 @@ jq -e '.last_project.fsp_completed_at and .last_project.sdk_app_completed_at' \
 ```
 
 `build-fif` uses `app_project_path`'s parent-of-parent as `FD_APP_ROOT`; `upload-app` does not read context directly (it scans `$USER_ROOT/seamos-assets/`).
+
+`regen-sdk-app` reads `app_project_path`, `app_project_name`, `codegen_type`, and `workspace_path` from `last_project`, runs `FD_OPERATION=UPDATE_SDK_APP`, and on success writes back `operation=UPDATE_SDK_APP` + `sdk_app_updated_at` without touching `sdk_app_completed_at` (the original Stage 1B completion marker is preserved).
 
 ### Concurrency
 

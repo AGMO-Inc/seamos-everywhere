@@ -1,0 +1,72 @@
+{
+  "skill_name": "regen-sdk-app",
+  "evals": [
+    {
+      "id": 1,
+      "name": "happy-path-from-context",
+      "prompt": "내 SeamOS 프로젝트에서 FSP를 살짝 수정했는데, 기존 앱 코드는 건드리지 말고 SDK랑 skeleton만 최신 FSP에 맞춰서 재생성해줘. create-project는 전에 한 번 돌렸고 .seamos-context.json 에 마지막 프로젝트 정보 다 있어.",
+      "expected_output": "Claude should invoke regen-sdk-app skill (not update-app, not create-project). It should read .seamos-context.json, derive PROJECT_NAME/APP_PROJECT_NAME/CODEGEN_TYPE/APP_PROJECT_PATH from last_project.*, build config.prop with the extra app.project.path line (container path /workspace/...), and run docker with FD_OPERATION=UPDATE_SDK_APP.",
+      "files": [],
+      "assertions": [
+        {
+          "id": "triggers-regen-sdk-app",
+          "description": "Invokes regen-sdk-app skill rather than update-app or create-project"
+        },
+        {
+          "id": "reads-context",
+          "description": "Reads .seamos-context.json and uses last_project.app_project_path"
+        },
+        {
+          "id": "operation-update-sdk-app",
+          "description": "The docker invocation uses FD_OPERATION=UPDATE_SDK_APP (not GENERATE_SDK_APP)"
+        },
+        {
+          "id": "config-prop-has-app-project-path",
+          "description": "The generated _config.prop contains an `app.project.path=` line pointing at /workspace/<PROJECT>/<PROJECT>_<APP>"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "missing-context-guidance",
+      "prompt": "앱 스켈레톤 갱신해줘",
+      "expected_output": "The user's project has no .seamos-context.json (or no last_project.app_project_path). The skill should detect this and tell the user to run create-project first — not silently fail or guess defaults. Exit code 64 is correct.",
+      "files": [],
+      "assertions": [
+        {
+          "id": "detects-missing-context",
+          "description": "Detects that context file or required fields are missing"
+        },
+        {
+          "id": "routes-to-create-project",
+          "description": "Surfaces guidance to run `create-project` first rather than attempting to guess app_project_path"
+        },
+        {
+          "id": "exits-64-on-missing",
+          "description": "Script exits with code 64 (usage error) when app_project_path cannot be resolved"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "interface-changed-routing",
+      "prompt": "interface.json에 새 branch를 하나 추가했어. 이것까지 반영해서 SDK/APP 업데이트해줘.",
+      "expected_output": "Changing interface.json invalidates the FSP — UPDATE_SDK_APP alone won't pick up new branches because it reads the FSP as-is. Claude should recognize this and explain the two-step recipe: (1) `create-project --force-clean` to regenerate FSP from the updated interface, then (2) `regen-sdk-app` to merge into the existing app. It should NOT silently run regen-sdk-app (which would produce a stale result).",
+      "files": [],
+      "assertions": [
+        {
+          "id": "recognizes-fsp-drift",
+          "description": "Recognizes that interface.json change requires FSP regeneration, not just UPDATE_SDK_APP"
+        },
+        {
+          "id": "proposes-two-step-recipe",
+          "description": "Proposes create-project --force-clean THEN regen-sdk-app (in that order), rather than running regen-sdk-app alone"
+        },
+        {
+          "id": "warns-about-app-backup",
+          "description": "Mentions that --force-clean preserves seamos-assets/SSOT but the user may want to commit/snapshot app code first (since create-project's Stage 1B regenerates the skeleton)"
+        }
+      ]
+    }
+  ]
+}
