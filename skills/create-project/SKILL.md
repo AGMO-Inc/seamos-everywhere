@@ -12,6 +12,16 @@ The first step in SeamOS app development. Generates an FSP project and — by de
 
 UI type is fixed to `"Custom UI"`. Platforms: Windows (WSL2 / Git Bash), Linux, macOS (Apple Silicon included, requires Rosetta 2).
 
+## Agent Preflight (REQUIRED)
+
+Before invoking `create-project.sh`, an LLM agent MUST confirm the following with the user — these are user-owned decisions, not defaults to assume:
+
+1. **`--project-name`** — the project name.
+2. **`--codegen-type`** — `JAVA` or `CPP`. The script will exit `64` if this is missing in non-interactive mode. Ask explicitly; do not guess.
+3. **Interface JSON source** — whether an existing `<PROJECT>-interface.json` SSOT should be reused, a new file provided via `--interface-json`, or synthesized interactively from offlineDB.
+
+Only proceed to `Bash` invocation once these three are unambiguous.
+
 ## Prerequisites
 
 - **Docker Desktop** (macOS/Windows) or Docker Engine (Linux)

@@ -91,7 +91,8 @@ Options:
                                 (promoted to \$USER_ROOT/<name>-interface.json SSOT)
   --workspace <path>            Workspace dir (default: \$USER_ROOT/<project-name>)
   --skip-sdk-app                Skip Stage 1B (generate FSP only)
-  --codegen-type JAVA|CPP       Code generation type for Stage 1B (default: JAVA)
+  --codegen-type JAVA|CPP       Code generation type for Stage 1B
+                                (required for Stage 1B; prompted interactively when a TTY is available)
   --app-project-name <name>     App project name (default: same as --project-name)
   --process-timer <duration>    app.process.timer value (default: 1s)
   --mvn-args <string>           Maven extra args (default: empty)
@@ -398,14 +399,19 @@ DOCKER_CMD_1B=(
   "$IMAGE_TAG"
 )
 
-# Resolve default CODEGEN_TYPE for Stage 1B if needed
+# Resolve CODEGEN_TYPE for Stage 1B if needed.
+# Fail closed when invoked without a TTY (e.g., by an LLM agent) so the caller is
+# forced to surface the choice to the user instead of silently defaulting to JAVA.
 if [[ $RUN_STAGE_1B -eq 1 && -z "$CODEGEN_TYPE" ]]; then
   if [[ -t 0 && $DRY_RUN -eq 0 ]]; then
     read -r -p "Select codegen.type [JAVA/CPP] (default: JAVA): " CODEGEN_TYPE_INPUT
     CODEGEN_TYPE="${CODEGEN_TYPE_INPUT:-JAVA}"
     CODEGEN_TYPE="$(echo "$CODEGEN_TYPE" | tr '[:lower:]' '[:upper:]')"
   else
-    CODEGEN_TYPE="JAVA"
+    echo "ERROR: --codegen-type is required when running non-interactively (no TTY)." >&2
+    echo "       Pass --codegen-type JAVA or --codegen-type CPP explicitly." >&2
+    echo "       (If you are an LLM agent, ask the user which codegen type they want before invoking.)" >&2
+    exit 64
   fi
 fi
 
