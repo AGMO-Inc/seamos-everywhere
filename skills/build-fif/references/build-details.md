@@ -144,9 +144,9 @@ docker exec $CONTAINER /usr/share/build.sh \
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `Docker is not installed` | Docker not installed | Ubuntu: `sudo apt-get install -y docker.io`, macOS: `brew install --cask docker` |
-| `Docker daemon is not running` | Daemon not started | Linux: `sudo systemctl start docker`, macOS: `open -a Docker` |
-| `permission denied` | Insufficient permissions | `sudo usermod -aG docker $USER` then re-login |
+| `Docker CLI not found` | Docker not installed, or installed but not on PATH (common on macOS where `docker` is a shell alias) | Linux: `sudo apt-get install -y docker.io` · macOS: `brew install --cask docker` (or `sudo ln -sf /Applications/Docker.app/Contents/Resources/bin/docker /usr/local/bin/docker`) · Windows: install Docker Desktop. As an escape hatch, `DOCKER=/full/path/to/docker` is honored. |
+| `Docker daemon is not running` | Daemon not started | Linux: `sudo systemctl start docker` · macOS: `open -a Docker` · Windows: launch Docker Desktop |
+| `permission denied` | Insufficient permissions | Linux: `sudo usermod -aG docker $USER` then re-login |
 
 ### Java Build
 

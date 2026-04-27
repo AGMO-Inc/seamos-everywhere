@@ -61,11 +61,33 @@ case "$OS_NAME" in
 esac
 
 # ── 2. Required tools ────────────────────────────────────────────────────────
-# docker
+# docker — augment PATH with common install locations on Linux/macOS/Windows so
+# `command -v docker` works in non-interactive bash where shell aliases are invisible.
+if [ -n "${DOCKER:-}" ] && [ -x "${DOCKER}" ]; then
+  export PATH="$(dirname "${DOCKER}"):${PATH}"
+fi
+if ! command -v docker >/dev/null 2>&1 && ! command -v docker.exe >/dev/null 2>&1; then
+  for CAND in \
+    /usr/bin \
+    /usr/local/bin \
+    /snap/bin \
+    /opt/homebrew/bin \
+    /Applications/Docker.app/Contents/Resources/bin \
+    "/c/Program Files/Docker/Docker/resources/bin" \
+    "/mnt/c/Program Files/Docker/Docker/resources/bin"; do
+    if [ -x "${CAND}/docker" ] || [ -x "${CAND}/docker.exe" ]; then
+      export PATH="${CAND}:${PATH}"
+      break
+    fi
+  done
+fi
+
 if command -v docker >/dev/null 2>&1; then
   log_ok "docker: $(docker --version 2>/dev/null | head -1)"
+elif command -v docker.exe >/dev/null 2>&1; then
+  log_ok "docker.exe: $(docker.exe --version 2>/dev/null | head -1)"
 else
-  log_err "docker not found. Install Docker Desktop (macOS/Windows) or Docker Engine (Linux)."
+  log_err "docker not found. Install Docker Desktop (macOS/Windows) or Docker Engine (Linux). If installed, set DOCKER=/path/to/docker."
 fi
 
 # jq

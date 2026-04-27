@@ -51,25 +51,30 @@ for arg in "$@"; do
   esac
 done
 
-# ─── docker PATH resolver ──────────────────────────────────────────────────
-# Shell aliases (e.g. `alias docker=/Applications/Docker.app/.../bin/docker`)
-# are invisible to non-interactive bash, and a default PATH often omits the
-# Docker Desktop CLI location. Without this probe, every docker call fails
-# with 'command not found' and surfaces as confusing downstream errors
-# (e.g. 'broker image unreachable').
-if ! command -v docker >/dev/null 2>&1; then
+# ─── docker PATH resolver (cross-platform) ─────────────────────────────────
+# Lookup order: $DOCKER override → PATH (docker / docker.exe) → common install
+# locations on Linux / macOS / Windows (Git Bash, WSL). Aliases are invisible
+# to non-interactive bash, so we probe explicit binary locations.
+if [ -n "${DOCKER:-}" ] && [ -x "${DOCKER}" ]; then
+  export PATH="$(dirname "${DOCKER}"):${PATH}"
+fi
+if ! command -v docker >/dev/null 2>&1 && ! command -v docker.exe >/dev/null 2>&1; then
   for CAND in \
-    /Applications/Docker.app/Contents/Resources/bin \
+    /usr/bin \
     /usr/local/bin \
-    /opt/homebrew/bin; do
-    if [ -x "${CAND}/docker" ]; then
+    /snap/bin \
+    /opt/homebrew/bin \
+    /Applications/Docker.app/Contents/Resources/bin \
+    "/c/Program Files/Docker/Docker/resources/bin" \
+    "/mnt/c/Program Files/Docker/Docker/resources/bin"; do
+    if [ -x "${CAND}/docker" ] || [ -x "${CAND}/docker.exe" ]; then
       export PATH="${CAND}:${PATH}"
       break
     fi
   done
 fi
-if ! command -v docker >/dev/null 2>&1; then
-  err "docker binary not found in PATH. Install Docker Desktop / Docker Engine, or ensure 'docker' is on PATH for non-interactive shells."
+if ! command -v docker >/dev/null 2>&1 && ! command -v docker.exe >/dev/null 2>&1; then
+  err "Docker CLI not found. Install Docker Desktop (macOS/Windows) or docker.io (Linux), or set DOCKER=/path/to/docker. https://docs.docker.com/engine/install/"
   exit 127
 fi
 

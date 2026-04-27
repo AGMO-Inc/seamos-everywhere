@@ -203,24 +203,57 @@ cd "$PROJ_ROOT"
 # ── Step 1: Docker check ──────────────────────────────────
 echo "[1/7] Checking Docker..."
 
+# Cross-platform Docker CLI resolver (Linux / macOS / Windows Git-Bash / WSL).
+# Lookup order: $DOCKER override → PATH (docker / docker.exe) → common install locations.
+resolve_docker() {
+    if [ -n "${DOCKER:-}" ] && [ -x "$DOCKER" ]; then
+        printf '%s' "$DOCKER"; return 0
+    fi
+    local found
+    found=$(command -v docker 2>/dev/null || true)
+    [ -z "$found" ] && found=$(command -v docker.exe 2>/dev/null || true)
+    if [ -n "$found" ]; then
+        printf '%s' "$found"; return 0
+    fi
+    local p
+    for p in \
+        /usr/bin/docker /usr/local/bin/docker /snap/bin/docker \
+        /opt/homebrew/bin/docker /Applications/Docker.app/Contents/Resources/bin/docker \
+        "/c/Program Files/Docker/Docker/resources/bin/docker.exe" \
+        "/c/Program Files/Docker/Docker/resources/bin/docker" \
+        "/mnt/c/Program Files/Docker/Docker/resources/bin/docker.exe"
+    do
+        [ -x "$p" ] && { printf '%s' "$p"; return 0; }
+    done
+    return 1
+}
+
 DOCKER_BIN=""
-for p in /usr/bin/docker /usr/local/bin/docker /snap/bin/docker; do
-    [ -x "$p" ] && DOCKER_BIN="$p" && break
-done
-[ -z "$DOCKER_BIN" ] && DOCKER_BIN=$(command -v docker 2>/dev/null || true)
+DOCKER_BIN=$(resolve_docker || true)
 
 if [ -z "$DOCKER_BIN" ]; then
-    echo "ERROR: Docker is not installed."
-    echo "  Ubuntu/Debian: sudo apt-get update && sudo apt-get install -y docker.io"
-    echo "  macOS: brew install --cask docker"
+    echo "ERROR: Docker CLI not found on this system."
+    echo "  Linux:   sudo apt-get install -y docker.io   (then 'sudo systemctl start docker')"
+    echo "  macOS:   brew install --cask docker          (then open Docker Desktop)"
+    echo "  Windows: Install Docker Desktop — https://www.docker.com/products/docker-desktop"
+    echo ""
+    echo "If Docker is installed but not detected, set DOCKER=/path/to/docker and retry."
     echo "  Official docs: https://docs.docker.com/engine/install/"
     exit 1
 fi
 
+# Prepend docker's directory to PATH so `docker buildx`/`docker compose` plugins resolve.
+DOCKER_DIR=$(dirname "$DOCKER_BIN")
+case ":$PATH:" in
+    *":$DOCKER_DIR:"*) ;;
+    *) export PATH="$DOCKER_DIR:$PATH" ;;
+esac
+
 if ! "$DOCKER_BIN" info >/dev/null 2>&1; then
     echo "ERROR: Docker daemon is not running."
-    echo "  Linux: sudo systemctl start docker"
-    echo "  macOS: open -a Docker"
+    echo "  Linux:   sudo systemctl start docker"
+    echo "  macOS:   open -a Docker     (wait until the whale icon shows 'Docker Desktop is running')"
+    echo "  Windows: Start Docker Desktop from the Start Menu and wait for status 'Running'"
     exit 1
 fi
 

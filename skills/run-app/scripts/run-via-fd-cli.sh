@@ -23,20 +23,27 @@ LOG_PREFIX="[run-via-fd-cli]"
 log() { echo "${LOG_PREFIX} $*"; }
 err() { echo "${LOG_PREFIX} [ERROR] $*" >&2; }
 
-# ─── docker PATH resolver (same heuristic as run-app.sh) ───────────────────
-if ! command -v docker >/dev/null 2>&1; then
+# ─── docker PATH resolver (cross-platform; same heuristic as run-app.sh) ───
+if [ -n "${DOCKER:-}" ] && [ -x "${DOCKER}" ]; then
+  export PATH="$(dirname "${DOCKER}"):${PATH}"
+fi
+if ! command -v docker >/dev/null 2>&1 && ! command -v docker.exe >/dev/null 2>&1; then
   for CAND in \
-    /Applications/Docker.app/Contents/Resources/bin \
+    /usr/bin \
     /usr/local/bin \
-    /opt/homebrew/bin; do
-    if [ -x "${CAND}/docker" ]; then
+    /snap/bin \
+    /opt/homebrew/bin \
+    /Applications/Docker.app/Contents/Resources/bin \
+    "/c/Program Files/Docker/Docker/resources/bin" \
+    "/mnt/c/Program Files/Docker/Docker/resources/bin"; do
+    if [ -x "${CAND}/docker" ] || [ -x "${CAND}/docker.exe" ]; then
       export PATH="${CAND}:${PATH}"
       break
     fi
   done
 fi
-if ! command -v docker >/dev/null 2>&1; then
-  err "docker binary not found in PATH"
+if ! command -v docker >/dev/null 2>&1 && ! command -v docker.exe >/dev/null 2>&1; then
+  err "Docker CLI not found. Install Docker Desktop (macOS/Windows) or docker.io (Linux), or set DOCKER=/path/to/docker."
   exit 127
 fi
 
