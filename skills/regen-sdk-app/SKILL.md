@@ -18,6 +18,7 @@ Re-runs FD Headless in **UPDATE_SDK_APP** mode against an existing workspace. Bo
 | FSP/interface unchanged, just want a clean app skeleton from scratch | `create-project --resume` (re-runs Stage 1B = GENERATE_SDK_APP — **destroys** local app edits) | ❌ |
 | FSP already current (e.g. edited via FD GUI), only the SDK/skeleton needs to be merged into the existing app project | **this skill** (`regen-sdk-app`) | ✅ |
 | `interface.json` changed — FSP is now stale, but you want to keep your app code | `create-project --regen-fsp-only` **then** `regen-sdk-app` | ✅ |
+| `interface.json` changed AND you want the test simulator scaffold (.gen.tests/) regenerated to reflect new providers | `create-project --regen-fsp-only` **then** `regen-sdk-app --reset-tests` | ✅ app code; ❌ .gen.tests/ (regenerated) |
 | Workspace is dirty / corrupted, OK to lose user app code | `create-project --force-clean --i-know-this-deletes-app-code` | ❌ (intentional) |
 | Upload a new `.fif` version to the SDM marketplace | `update-app` — wrong layer, different concept | n/a |
 
@@ -139,6 +140,7 @@ No docker invocation, no disk mutation. Emit these path variables to stdout (mir
 ## Important Notes
 
 - **This skill refuses to run FSP regeneration**. FSP drift is handled explicitly by `create-project --regen-fsp-only` (FSP-only, app code preserved) or `create-project --force-clean --i-know-this-deletes-app-code` (full reset, opt-in). Single-responsibility per skill. If the user mentions interface changes, surface the two-step recipe instead of silently chaining.
+- **`.gen.tests/` is preserved by Bosch's UPDATE_SDK_APP** as user-data. After an interface change (e.g. adding a new plugin), the simulator scaffold (`SDKTest.java`, `data/sample_data.xml`, `data/Manifest.xml`) still references only the original providers and never publishes signals for the new ones. Pass `--reset-tests` to delete `.gen.tests/` so FD regenerates it from the current FSP/Manifest. The skill aborts if it detects `.java` files newer than `.classpath` under `src/` (likely user-edited); pass `--i-know-this-deletes-test-code` to override after copying anything you want to keep.
 - **Backing up app code**: UPDATE_SDK_APP is supposed to preserve your source, but since we cannot audit Bosch's merge logic, suggest the user commit or snapshot `<WORKSPACE>/<PROJECT>/<PROJECT>_<APP>/` before running — especially on the first use.
 - **`build-config-prop.sh` is shared** with `create-project` and lives under `skills/create-project/scripts/`. The only difference: this skill always passes `--app-project-path`; `create-project` Stage 1B never does.
 - **Context schema**: see `skills/shared-references/seamos-context-cache.md` — this skill adds `sdk_app_updated_at` (preserves `sdk_app_completed_at`).

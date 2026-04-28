@@ -3,10 +3,15 @@ set -euo pipefail
 
 # ─── run-via-fd-cli.sh — host-side wrapper around fd-cli image ────────────
 # Delegates build/run/test to the fd-cli Docker image, which (unlike
-# app-builder) bakes the NEVONEX Platform Service runtime libs at
-# `/workspace/.nevonex/dependencies/<ver>/lib/` and an unmodified GUI FD
-# binary at `/opt/nevonex/FeatureDesigner`. The image's
-# `/opt/fd-cli/scripts/fd-commands.sh` knows how to:
+# app-builder) ships the NEVONEX Platform Service runtime archive inside
+# the image. Two known archive locations are searched at prep time:
+#   1. ${SDK_DIR}/dependencies/INSTALL_x86_64.tar.xz  (legacy FD Headless SDK)
+#   2. /opt/nevonex/configuration/org.eclipse.osgi/<id>/.cp/dependencies/INSTALL_x86_64.tar.xz
+#      (fd-cli ≥ 2026-02-26 — FD no longer ships archive via SDK, only via image)
+# Whichever is found is extracted to /workspace/.nevonex/dependencies/<ver>/lib/.
+# An unmodified GUI FD binary lives at `/opt/nevonex/FeatureDesigner`.
+# fd-commands.sh is bind-mounted from fd-cli-runtime/scripts/ on the host
+# (the image itself does NOT carry it), and knows how to:
 #
 #   build  → cmake + make (C++) or mvn (Java)
 #   run    → spawn cpp_app / java JAR with LD_LIBRARY_PATH from .nevonex
@@ -57,6 +62,13 @@ MQTT_PORT="${MQTT_PORT:-1883}"
 SKIP_BUILD="${SKIP_BUILD:-0}"
 RUNAPP_DRYRUN="${RUNAPP_DRYRUN:-0}"
 
+# UI forwarder: TestSimulator/Spark inside the container binds to 127.0.0.1:6563
+# (lo only), which docker port-publish cannot reach. We always publish the host
+# UI port to a sidecar listener at 0.0.0.0:UI_FWD_INTERNAL inside the container,
+# which forwards to 127.0.0.1:6563. Set RUNAPP_NO_UI_FORWARDER=1 to disable.
+UI_FWD_INTERNAL="${UI_FWD_INTERNAL:-16563}"
+RUNAPP_NO_UI_FORWARDER="${RUNAPP_NO_UI_FORWARDER:-0}"
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --app-name) APP_NAME="${2:?}"; shift 2;;
@@ -93,6 +105,35 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 USER_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+
+# APP_PROJECT_ROOT auto-resolution.
+# FD Headless emits the project as <workspace>/<APP>/<APP>/ — the inner <APP>
+# is the project root that contains com.bosch.fsp.<APP>, <APP>_CPP_SDK, etc.
+# Search candidates in priority order:
+#   1. caller-supplied APP_PROJECT_ROOT (env or CLI)
+#   2. plugin tree:           ${USER_ROOT}/${APP_NAME}/${APP_NAME}
+#   3. current working dir:   ${PWD}/${APP_NAME}/${APP_NAME}, ${PWD}/${APP_NAME}, ${PWD}
+#   4. SEAMOS_WORKSPACE env:  ${SEAMOS_WORKSPACE}/${APP_NAME}/${APP_NAME}
+# A candidate is accepted only if it actually looks like an FD project
+# (has com.bosch.fsp.<APP_NAME> alongside).
+if [ -z "${APP_PROJECT_ROOT}" ]; then
+  CANDIDATES=(
+    "${USER_ROOT}/${APP_NAME}/${APP_NAME}"
+    "${PWD}/${APP_NAME}/${APP_NAME}"
+    "${PWD}/${APP_NAME}"
+    "${PWD}"
+  )
+  if [ -n "${SEAMOS_WORKSPACE:-}" ]; then
+    CANDIDATES+=("${SEAMOS_WORKSPACE}/${APP_NAME}/${APP_NAME}")
+  fi
+  for cand in "${CANDIDATES[@]}"; do
+    if [ -d "${cand}/com.bosch.fsp.${APP_NAME}" ]; then
+      APP_PROJECT_ROOT="${cand}"
+      log "auto-resolved APP_PROJECT_ROOT=${APP_PROJECT_ROOT}"
+      break
+    fi
+  done
+fi
 APP_PROJECT_ROOT="${APP_PROJECT_ROOT:-${USER_ROOT}/${APP_NAME}/${APP_NAME}}"
 APP_NAME_LOWER="$(echo "${APP_NAME}" | tr '[:upper:]' '[:lower:]')"
 CONTAINER_NAME="seamos-fdcli-${APP_NAME_LOWER}"
@@ -110,6 +151,12 @@ fi
 
 if [ ! -d "${APP_PROJECT_ROOT}" ]; then
   err "APP_PROJECT_ROOT not found: ${APP_PROJECT_ROOT}"
+  err "Searched: plugin tree, \$PWD, \$PWD/${APP_NAME}, \$PWD/${APP_NAME}/${APP_NAME}${SEAMOS_WORKSPACE:+, \$SEAMOS_WORKSPACE}"
+  err "Set APP_PROJECT_ROOT=/path/to/${APP_NAME}/${APP_NAME} explicitly, or cd into the workspace that contains '${APP_NAME}/'."
+  exit 2
+fi
+if [ ! -d "${APP_PROJECT_ROOT}/com.bosch.fsp.${APP_NAME}" ]; then
+  err "APP_PROJECT_ROOT=${APP_PROJECT_ROOT} does not look like an FD project (missing com.bosch.fsp.${APP_NAME}/). Pass the inner <APP>/<APP> path."
   exit 2
 fi
 
@@ -148,7 +195,14 @@ trap 'cleanup' EXIT INT TERM HUP
 
 # ─── DRYRUN ────────────────────────────────────────────────────────────────
 if [ "${RUNAPP_DRYRUN}" = "1" ]; then
-  echo "[run-via-fd-cli] DRYRUN: docker run -d --rm ${PLATFORM_ARGS[*]} --name ${CONTAINER_NAME} -v ${APP_PROJECT_ROOT}:/workspace/${APP_NAME} -v ${FD_CLI_SCRIPTS_HOST}:/opt/fd-cli/scripts:ro -v ${FD_CLI_CONFIG_HOST}:/opt/fd-cli/config:ro -p ${WS_PORT}:1456 -p ${UI_PORT}:6563 -p ${MQTT_PORT}:1883 ${FD_CLI_IMAGE} sleep infinity"
+  if [ "${UI_PORT}" = "0" ]; then
+    UI_PUBLISH=""
+  elif [ "${RUNAPP_NO_UI_FORWARDER}" = "1" ]; then
+    UI_PUBLISH="-p ${UI_PORT}:6563"
+  else
+    UI_PUBLISH="-p ${UI_PORT}:${UI_FWD_INTERNAL}"
+  fi
+  echo "[run-via-fd-cli] DRYRUN: docker run -d --rm ${PLATFORM_ARGS[*]} --name ${CONTAINER_NAME} -v ${APP_PROJECT_ROOT}:/workspace/${APP_NAME} -v ${FD_CLI_SCRIPTS_HOST}:/opt/fd-cli/scripts:ro -v ${FD_CLI_CONFIG_HOST}:/opt/fd-cli/config:ro -p ${WS_PORT}:1456 ${UI_PUBLISH} -p ${MQTT_PORT}:1883 ${FD_CLI_IMAGE} sleep infinity"
   exit 0
 fi
 
@@ -161,6 +215,17 @@ log "Starting fd-cli container ${CONTAINER_NAME}…"
 # service network alias for the broker. We collapse the broker into the same
 # container (single-container model), so feature.config's mqtt:host=tcp://broker
 # and connection.props broker=tcp://broker:1883 must resolve to 127.0.0.1.
+PORT_PUBLISH=( -p "${WS_PORT}:1456" -p "${MQTT_PORT}:1883" )
+if [ "${UI_PORT}" != "0" ]; then
+  if [ "${RUNAPP_NO_UI_FORWARDER}" = "1" ]; then
+    PORT_PUBLISH+=( -p "${UI_PORT}:6563" )
+  else
+    # Map host UI_PORT to the sidecar forwarder's listener port. The forwarder
+    # itself relays to 127.0.0.1:6563 inside the container. See ui-forwarder.py.
+    PORT_PUBLISH+=( -p "${UI_PORT}:${UI_FWD_INTERNAL}" )
+  fi
+fi
+
 docker run -d --rm \
   "${PLATFORM_ARGS[@]}" \
   --name "${CONTAINER_NAME}" \
@@ -168,9 +233,7 @@ docker run -d --rm \
   -v "${APP_PROJECT_ROOT}:/workspace/${APP_NAME}" \
   -v "${FD_CLI_SCRIPTS_HOST}:/opt/fd-cli/scripts:ro" \
   -v "${FD_CLI_CONFIG_HOST}:/opt/fd-cli/config:ro" \
-  -p "${WS_PORT}:1456" \
-  -p "${UI_PORT}:6563" \
-  -p "${MQTT_PORT}:1883" \
+  "${PORT_PUBLISH[@]}" \
   --entrypoint sleep \
   "${FD_CLI_IMAGE}" \
   infinity >/dev/null
@@ -184,11 +247,15 @@ for i in $(seq 1 10); do
 done
 
 # ─── Pre-extract Platform Service runtime deps ─────────────────────────────
-# fd-commands.sh expects ${SDK_DIR}/dependencies/INSTALL_x86_64.tar.xz, but
-# SampleImu2's FD-emitted tree uses x86_64.tar.xz (no INSTALL_ prefix). To
-# avoid forking upstream, we pre-populate /workspace/.nevonex/dependencies/
-# <LIB_BUILD_NUMBER>/lib ourselves — fd-commands.sh's existence check then
-# skips its own extraction step.
+# Archive search order:
+#   1. ${SDK_DIR}/dependencies/INSTALL_x86_64.tar.xz  — old FD Headless layout
+#   2. ${SDK_DIR}/dependencies/x86_64.tar.xz          — older variant (no prefix)
+#   3. /opt/nevonex/configuration/org.eclipse.osgi/*/.cp/dependencies/INSTALL_x86_64.tar.xz
+#                                                     — fd-cli ≥ 2026-02-26: archive
+#                                                       baked into the image (FD no
+#                                                       longer ships it via SDK).
+# OSGi bundle id under org.eclipse.osgi (e.g. 15/0/.cp) varies per image build,
+# so we resolve it dynamically with `find -quit`.
 log "prep: extracting Platform Service runtime deps to /workspace/.nevonex/"
 docker exec "${CONTAINER_NAME}" bash -c "
   set -e
@@ -208,13 +275,29 @@ docker exec "${CONTAINER_NAME}" bash -c "
     exit 0
   fi
   mkdir -p \"\$DEPS\"
-  for f in \"\$SDK_DIR/dependencies/INSTALL_x86_64.tar.xz\" \"\$SDK_DIR/dependencies/x86_64.tar.xz\"; do
+  CANDIDATES=(
+    \"\$SDK_DIR/dependencies/INSTALL_x86_64.tar.xz\"
+    \"\$SDK_DIR/dependencies/x86_64.tar.xz\"
+  )
+  IMAGE_ARCHIVE=\$(find /opt/nevonex/configuration/org.eclipse.osgi -path '*/dependencies/INSTALL_x86_64.tar.xz' -print -quit 2>/dev/null || true)
+  if [ -n \"\$IMAGE_ARCHIVE\" ]; then
+    CANDIDATES+=(\"\$IMAGE_ARCHIVE\")
+  fi
+  EXTRACTED=0
+  for f in \"\${CANDIDATES[@]}\"; do
     if [ -f \"\$f\" ]; then
       echo \"[prep] extracting \$f → \$DEPS\"
       xz -dc \"\$f\" | tar xf - -C \"\$DEPS\"
+      EXTRACTED=1
       break
     fi
   done
+  if [ \"\$EXTRACTED\" = \"0\" ]; then
+    echo \"[prep] FATAL: no Platform Service archive found. Tried:\"
+    printf '  - %s\n' \"\${CANDIDATES[@]}\"
+    echo \"  Image layout may have changed; inspect /opt/nevonex/configuration/org.eclipse.osgi/ for the archive path.\"
+    exit 3
+  fi
   if [ ! -d \"\$DEPS/lib\" ]; then
     echo \"[prep] FATAL: extracted but \$DEPS/lib missing — archive layout unexpected\"
     exit 3
@@ -245,24 +328,47 @@ log "run: spawning cpp_app / Java app in background"
 docker exec -d "${CONTAINER_NAME}" bash -c \
   "/opt/fd-cli/scripts/fd-commands.sh run ${APP_NAME} > /workspace/${APP_NAME}-run.log 2>&1"
 
-# Wait for cpp_app to bind WS port (up to 60s; image lacks `ss`/`netstat` so
-# probe via `/proc/net/tcp` for hex 0x05B0 = 1456). On Apple Silicon under
-# Rosetta the cpp_app cold start can take 30–45s; the 60s ceiling absorbs that.
-for i in $(seq 1 120); do
-  if docker exec "${CONTAINER_NAME}" bash -c "grep -q ': 0000:05B0 ' /proc/net/tcp 2>/dev/null"; then
+# Wait for cpp_app to bind WS port (up to 90s).
+# Three independent signals — first one to fire wins:
+#   (a) /proc/net/tcp   — IPv4 listening on hex 0x05B0 (=1456)
+#   (b) /proc/net/tcp6  — IPv6 listening on hex 0x05B0 (some Poco builds bind ::)
+#   (c) run.log marker  — "CustomUI server port:1456 started." (definitive log
+#                          line emitted right after the bind succeeds)
+# Past versions only checked (a) and false-FAILed under qemu/Rosetta where the
+# bind goes via ::ffff:0.0.0.0 and shows up in tcp6 only.
+WS_READY=0
+for i in $(seq 1 180); do
+  if docker exec "${CONTAINER_NAME}" bash -c "
+       grep -qE ': 0000:05B0 .* 0A ' /proc/net/tcp  2>/dev/null ||
+       grep -qE ': 00000000000000000000000000000000:05B0 .* 0A ' /proc/net/tcp6 2>/dev/null ||
+       grep -q   'CustomUI server port:1456 started' /workspace/${APP_NAME}-run.log 2>/dev/null
+     "; then
+    WS_READY=1
     log "cpp_app WS listening on container :1456 (host :${WS_PORT})"
     break
   fi
   sleep 0.5
-  if [ "$i" = "120" ]; then
-    err "cpp_app WS port 1456 did not open within 60s — see: docker exec ${CONTAINER_NAME} tail /workspace/${APP_NAME}-run.log"
-  fi
 done
+if [ "${WS_READY}" = "0" ]; then
+  err "cpp_app WS port 1456 did not open within 90s — see: docker exec ${CONTAINER_NAME} tail /workspace/${APP_NAME}-run.log"
+fi
 
 # ─── Test (background inside container) ────────────────────────────────────
 log "test: spawning TestSimulator in background"
 docker exec -d "${CONTAINER_NAME}" bash -c \
   "/opt/fd-cli/scripts/fd-commands.sh test ${APP_NAME} > /workspace/${APP_NAME}-test.log 2>&1"
+
+# ─── UI forwarder (sidecar) ────────────────────────────────────────────────
+# TestSimulator's Spark/Jetty binds to 127.0.0.1:6563 inside the container,
+# which docker port-publish cannot reach. Run a tiny TCP forwarder bound to
+# 0.0.0.0:UI_FWD_INTERNAL that relays to 127.0.0.1:6563. The host port
+# publish maps UI_PORT -> UI_FWD_INTERNAL (see PORT_PUBLISH above), so the
+# user hits http://localhost:UI_PORT and reaches Jetty transparently.
+if [ "${UI_PORT}" != "0" ] && [ "${RUNAPP_NO_UI_FORWARDER}" != "1" ]; then
+  log "ui-forwarder: starting 0.0.0.0:${UI_FWD_INTERNAL} -> 127.0.0.1:6563"
+  docker exec -d "${CONTAINER_NAME}" bash -c \
+    "python3 /opt/fd-cli/scripts/ui-forwarder.py ${UI_FWD_INTERNAL} 127.0.0.1 6563 > /workspace/${APP_NAME}-ui-forwarder.log 2>&1"
+fi
 
 # Detach: the orchestrator is now responsible for the container lifetime.
 # Suppress the EXIT trap so cleanup runs ONLY on signal — not on normal
@@ -273,9 +379,14 @@ cat <<EOF
 
 [run-via-fd-cli] Container ${CONTAINER_NAME} is running.
 [run-via-fd-cli] Host ports: ws=${WS_PORT}  ui=${UI_PORT}  mqtt=${MQTT_PORT}
+[run-via-fd-cli] UI forwarder: $([ "${UI_PORT}" = "0" ] && echo "disabled (--ui-port 0)" \
+  || ([ "${RUNAPP_NO_UI_FORWARDER}" = "1" ] && echo "disabled (RUNAPP_NO_UI_FORWARDER=1)" \
+      || echo "host:${UI_PORT} -> container:${UI_FWD_INTERNAL} -> 127.0.0.1:6563"))
 
 Verify with:
   bash skills/run-app/scripts/run-app.sh --diagnose
+  # cpp_app-only project (no Java UI gateway running): add --ui-port 0 to skip layer 5
+  bash skills/run-app/scripts/run-app.sh --diagnose --ui-port 0
 
 Live logs:
   docker exec ${CONTAINER_NAME} tail -f /workspace/${APP_NAME}-run.log

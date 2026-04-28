@@ -16,3 +16,6 @@ skills/*-workspace/
 
 ref
 docker/fd-headless/prototype/*.log
+
+__pycache__/
+*.pyc

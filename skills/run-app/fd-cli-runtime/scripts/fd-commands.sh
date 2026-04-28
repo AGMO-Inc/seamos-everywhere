@@ -68,6 +68,60 @@ cpp_sdk_dir() {
   echo "$WORKSPACE/$PROJECT/${PROJECT}_CPP_SDK"
 }
 
+# Eclipse Plugin layout (no pom.xml, just src/ + bin/ + lib-or-testlib/) compiler.
+# FD Headless emits *.gen and *.gen.tests as PDE plugins, not Maven modules,
+# so when there's no pom.xml we must compile manually with javac.
+# Args: $1 = plugin dir, $2 = comma-separated extra cp dirs (e.g. sibling gen/bin)
+compile_eclipse_plugin() {
+  local PLUGIN_DIR="$1"
+  local EXTRA_CP="${2:-}"
+  local SRC_DIR="$PLUGIN_DIR/src"
+  local BIN_DIR="$PLUGIN_DIR/bin"
+
+  if [ ! -d "$SRC_DIR" ]; then
+    return 0
+  fi
+  # Skip if bin/ already populated AND newer than every src file (Eclipse-cached).
+  if [ -d "$BIN_DIR" ] && [ -n "$(find "$BIN_DIR" -name '*.class' -print -quit 2>/dev/null)" ]; then
+    local NEW_SRC
+    NEW_SRC=$(find "$SRC_DIR" -name '*.java' -newer "$BIN_DIR" -print -quit 2>/dev/null || true)
+    if [ -z "$NEW_SRC" ]; then
+      echo "[compile_eclipse_plugin] $(basename "$PLUGIN_DIR"): bin/ up-to-date, skipping"
+      return 0
+    fi
+  fi
+
+  echo "[compile_eclipse_plugin] javac $(basename "$PLUGIN_DIR") src/ → bin/"
+  mkdir -p "$BIN_DIR"
+
+  local CP=""
+  for jar in "$PLUGIN_DIR"/lib/*.jar "$PLUGIN_DIR"/testlib/*.jar; do
+    [ -f "$jar" ] && CP="${CP:+$CP:}$jar"
+  done
+  if [ -n "$EXTRA_CP" ]; then
+    CP="${CP:+$CP:}$EXTRA_CP"
+  fi
+
+  local SRC_LIST
+  SRC_LIST=$(mktemp)
+  find "$SRC_DIR" -name '*.java' >"$SRC_LIST"
+  if [ ! -s "$SRC_LIST" ]; then
+    rm -f "$SRC_LIST"
+    return 0
+  fi
+  # -source/-target 1.8 matches Bundle-RequiredExecutionEnvironment in the manifests.
+  if ! javac -encoding UTF-8 -source 1.8 -target 1.8 \
+         ${CP:+-cp "$CP"} -d "$BIN_DIR" "@$SRC_LIST" 2>&1; then
+    rm -f "$SRC_LIST"
+    echo "[compile_eclipse_plugin] WARNING: javac failed for $PLUGIN_DIR"
+    return 1
+  fi
+  rm -f "$SRC_LIST"
+
+  # Copy resources (non-.java) so Class.getResource() lookups work from bin/.
+  (cd "$SRC_DIR" && find . -type f ! -name '*.java' -exec cp --parents {} "$BIN_DIR"/ \; 2>/dev/null || true)
+}
+
 # mosquitto가 1883 포트에서 수신 중인지 확인, 아니면 시작
 ensure_mosquitto() {
   if pgrep -x mosquitto > /dev/null 2>&1; then
@@ -109,12 +163,17 @@ case "$COMMAND" in
       GEN_DIR="$WORKSPACE/$PROJECT/com.bosch.fsp.${PROJECT}.gen"
       APP_DIR=$(java_app_dir)
 
-      # SDK gen 모듈 빌드 (존재하는 경우)
+      # SDK gen 모듈 빌드 (존재하는 경우 — Maven 우선, 없으면 Eclipse Plugin javac 폴백)
       if [ -d "$GEN_DIR" ]; then
-        echo "=== Building SDK gen module (Maven) ==="
-        cd "$GEN_DIR"
-        mvn install -q
-        echo "SDK gen module built successfully."
+        if [ -f "$GEN_DIR/pom.xml" ]; then
+          echo "=== Building SDK gen module (Maven) ==="
+          cd "$GEN_DIR"
+          mvn install -q
+          echo "SDK gen module built successfully."
+        else
+          echo "=== Building SDK gen module (Eclipse Plugin / javac) ==="
+          compile_eclipse_plugin "$GEN_DIR"
+        fi
       fi
 
       # 앱 빌드
@@ -128,14 +187,19 @@ case "$COMMAND" in
         exit 1
       fi
 
-      # Build gen.tests if present
+      # Build gen.tests if present (Maven 우선, 없으면 javac 폴백)
       GEN_TESTS_DIR="$WORKSPACE/$PROJECT/com.bosch.fsp.${PROJECT}.gen.tests"
-      if [ -d "$GEN_TESTS_DIR" ] && [ -f "$GEN_TESTS_DIR/pom.xml" ]; then
-        echo "=== Building test module (Maven) ==="
-        cd "$GEN_TESTS_DIR"
-        mvn package -q -DskipTests
-        mvn dependency:copy-dependencies -q -DoutputDirectory=target/dependency
-        echo "Test module built successfully."
+      if [ -d "$GEN_TESTS_DIR" ]; then
+        if [ -f "$GEN_TESTS_DIR/pom.xml" ]; then
+          echo "=== Building test module (Maven) ==="
+          cd "$GEN_TESTS_DIR"
+          mvn package -q -DskipTests
+          mvn dependency:copy-dependencies -q -DoutputDirectory=target/dependency
+          echo "Test module built successfully."
+        else
+          echo "=== Building test module (Eclipse Plugin / javac) ==="
+          compile_eclipse_plugin "$GEN_TESTS_DIR" "$GEN_DIR/bin"
+        fi
       fi
 
     elif [ "$PROJECT_TYPE" = "cpp" ]; then
@@ -145,11 +209,23 @@ case "$COMMAND" in
       INSTALL_DIR="$WORKSPACE/$PROJECT/install"
 
       # C++ 의존성 추출 (Boost, EMF4CPP, FCAL 등 — 아카이브에 포함)
+      # Archive may live in (a) SDK/dependencies/ (legacy FD Headless), or
+      # (b) inside the fd-cli image at /opt/nevonex/configuration/org.eclipse.osgi/<id>/.cp/dependencies/
+      # (fd-cli ≥ 2026-02-26 — FD no longer ships it via SDK).
       BUILD_NUMBER=$(cat "$SDK_DIR/CMakeLists.txt" 2>/dev/null | grep -oP 'set\(LIB_BUILD_NUMBER "\K[^"]+' | head -1)
       DEPS_DIR="/workspace/.nevonex/dependencies/${BUILD_NUMBER}"
-      DEPS_ARCHIVE="$SDK_DIR/dependencies/INSTALL_x86_64.tar.xz"
-      if [ ! -d "$DEPS_DIR/lib" ] && [ -f "$DEPS_ARCHIVE" ]; then
+      DEPS_ARCHIVE=""
+      for cand in \
+        "$SDK_DIR/dependencies/INSTALL_x86_64.tar.xz" \
+        "$SDK_DIR/dependencies/x86_64.tar.xz"; do
+        if [ -f "$cand" ]; then DEPS_ARCHIVE="$cand"; break; fi
+      done
+      if [ -z "$DEPS_ARCHIVE" ]; then
+        DEPS_ARCHIVE=$(find /opt/nevonex/configuration/org.eclipse.osgi -path '*/dependencies/INSTALL_x86_64.tar.xz' -print -quit 2>/dev/null || true)
+      fi
+      if [ ! -d "$DEPS_DIR/lib" ] && [ -n "$DEPS_ARCHIVE" ] && [ -f "$DEPS_ARCHIVE" ]; then
         echo "=== Extracting C++ dependencies ==="
+        echo "Source: $DEPS_ARCHIVE"
         mkdir -p "$DEPS_DIR"
         xz -dc "$DEPS_ARCHIVE" | tar xf - -C "$DEPS_DIR"
         echo "Dependencies extracted to $DEPS_DIR"
@@ -194,23 +270,36 @@ case "$COMMAND" in
         exit 1
       fi
 
-      # Build Java gen SDK (needed for gen.tests dependency)
+      # Build Java gen SDK (gen.tests의 의존성으로 필요)
+      # FD Headless emits two layouts depending on the project: Maven (pom.xml)
+      # or Eclipse Plugin (META-INF/MANIFEST.MF + build.properties). Try Maven
+      # first, fall back to javac for the plugin layout.
       GEN_DIR="$WORKSPACE/$PROJECT/com.bosch.fsp.${PROJECT}.gen"
-      if [ -d "$GEN_DIR" ] && [ -f "$GEN_DIR/pom.xml" ]; then
-        echo "=== Building SDK gen module for tests (Maven) ==="
-        cd "$GEN_DIR"
-        mvn install -q
-        echo "SDK gen module built successfully."
+      if [ -d "$GEN_DIR" ]; then
+        if [ -f "$GEN_DIR/pom.xml" ]; then
+          echo "=== Building SDK gen module for tests (Maven) ==="
+          cd "$GEN_DIR"
+          mvn install -q
+          echo "SDK gen module built successfully."
+        else
+          echo "=== Building SDK gen module for tests (Eclipse Plugin / javac) ==="
+          compile_eclipse_plugin "$GEN_DIR"
+        fi
       fi
 
       # Build gen.tests if present (Java-based, common to both project types)
       GEN_TESTS_DIR="$WORKSPACE/$PROJECT/com.bosch.fsp.${PROJECT}.gen.tests"
-      if [ -d "$GEN_TESTS_DIR" ] && [ -f "$GEN_TESTS_DIR/pom.xml" ]; then
-        echo "=== Building test module (Maven) ==="
-        cd "$GEN_TESTS_DIR"
-        mvn package -q -DskipTests
-        mvn dependency:copy-dependencies -q -DoutputDirectory=target/dependency
-        echo "Test module built successfully."
+      if [ -d "$GEN_TESTS_DIR" ]; then
+        if [ -f "$GEN_TESTS_DIR/pom.xml" ]; then
+          echo "=== Building test module (Maven) ==="
+          cd "$GEN_TESTS_DIR"
+          mvn package -q -DskipTests
+          mvn dependency:copy-dependencies -q -DoutputDirectory=target/dependency
+          echo "Test module built successfully."
+        else
+          echo "=== Building test module (Eclipse Plugin / javac) ==="
+          compile_eclipse_plugin "$GEN_TESTS_DIR" "$GEN_DIR/bin"
+        fi
       fi
 
     else

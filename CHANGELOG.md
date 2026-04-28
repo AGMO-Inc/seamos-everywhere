@@ -2,6 +2,63 @@
 
 All notable changes to **seamos-everywhere** are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [SemVer](https://semver.org/) (pre-1.0: minor bumps signal feature additions, patch bumps signal fixes).
 
+## [0.5.3] — 2026-04-28
+
+`run-app --via-fd-cli` 와 `regen-sdk-app` 의 실전 사용 중 드러난 6종 버그/제약을 한 번에 수정. 모두 코드 변경 없이 스킬 측에서 흡수 가능한 케이스라 패치 버전 bump.
+
+### Fixed — `run-app --via-fd-cli` Platform Service 아카이브 경로 변경 미대응
+
+`fd-cli` 이미지(2026-02-26 빌드 이후) 가 NEVONEX Platform Service 런타임 아카이브를 SDK(`<APP>_CPP_SDK/dependencies/INSTALL_x86_64.tar.xz`) 대신 **이미지 내부**(`/opt/nevonex/configuration/org.eclipse.osgi/<id>/.cp/dependencies/INSTALL_x86_64.tar.xz`) 로 옮긴 변경에 대응. prep step 이 SDK 경로에서 아카이브를 못 찾으면 `mkdir` 만 한 채 추출 실패 → `lib/` 부재로 `FATAL exit(3)` 발생하던 회귀를 제거.
+
+- `run-via-fd-cli.sh` prep step 의 아카이브 후보 목록을 (1) 레거시 SDK 경로 → (2) 이미지 내부 경로(OSGi bundle id 동적 탐색) 순으로 확장.
+- `fd-commands.sh` build 단계도 동일한 폴백 적용.
+- 추출 시도조차 못 한 경우와 추출 후 `lib/` 누락을 분리 진단 메시지로 출력.
+
+### Fixed — Eclipse Plugin layout `.gen.tests/` 미컴파일로 `TestSimulator` 침묵
+
+FD Headless 가 emit 한 `com.bosch.fsp.<APP>.gen` / `com.bosch.fsp.<APP>.gen.tests` 가 PDE plugin layout(`pom.xml` 부재, `META-INF/MANIFEST.MF` + `src/` + `lib`/`testlib`) 으로 떨어진 프로젝트에서, `fd-commands.sh` 가 Maven 빌드만 시도하고 그 외 layout 은 손대지 않아 `bin/` 이 비어 있는 채 `test` 명령이 `NoClassDefFoundError: com.bosch.nevonex.sdk.test.TestSimulator` 로 침묵하던 문제. 결과적으로 시뮬레이터의 시그널 publish 가 일어나지 않아 cpp_app controller 도 침묵.
+
+- `fd-commands.sh` 에 `compile_eclipse_plugin()` 헬퍼 추가 — `lib/` + `testlib/` 자동 classpath 수집, sibling 모듈 bin 경로 추가, mtime 기반 up-to-date 스킵, 비-`.java` 리소스 복사. `-source/-target 1.8` 매핑.
+- Java/C++ 양 분기 모두 Maven 우선 → 미발견 시 javac 폴백.
+
+### Fixed — `--via-fd-cli` WS readiness probe false-FAIL
+
+cpp_app 이 `CustomUI server port:1456 started.` 까지 떴는데도 `/proc/net/tcp` IPv4 검사 한 가지에만 의존해 60초 타임아웃으로 false-FAIL 처리하던 버그. Apple Silicon Rosetta 콜드 스타트 / IPv6 듀얼스택 바인딩 케이스를 못 잡았음.
+
+- 세 가지 신호(`/proc/net/tcp` IPv4 + `/proc/net/tcp6` IPv6 + run.log 의 `CustomUI server port:1456 started` 마커) 중 하나만 잡혀도 PASS.
+- 타임아웃 60s → 90s.
+
+### Fixed — `--via-fd-cli` UI gateway(6563) 호스트 도달 불가
+
+`TestSimulator` 의 Spark/Jetty 가 컨테이너 내부 `127.0.0.1:6563` (lo 인터페이스) 에만 바인딩되어 docker port-publish(`0.0.0.0:6563 → 컨테이너 6563`) 로 들어온 요청이 응답을 못 받던 문제. `diagnose` layer 5 가 항상 FAIL 처리되었음.
+
+- `fd-cli-runtime/scripts/ui-forwarder.py` (python3 표준 라이브러리만 사용하는 TCP forwarder) 추가.
+- `run-via-fd-cli.sh` 가 host UI 포트를 컨테이너 내부 `16563` 으로 publish 하고, test 단계 직후 `0.0.0.0:16563 → 127.0.0.1:6563` forwarder 를 백그라운드로 자동 기동.
+- escape hatch: `--ui-port 0` (publish/forwarder 모두 skip), `RUNAPP_NO_UI_FORWARDER=1` (구 동작으로 fallback).
+
+### Fixed — `--via-fd-cli` `APP_PROJECT_ROOT` 자동 해석
+
+기본 경로가 플러그인 트리(`${USER_ROOT}/<APP>/<APP>`) 한 곳만 보고 있어, 사용자가 다른 워크스페이스에서 작업할 때 매번 `APP_PROJECT_ROOT=...` env 를 명시 지정해야 했던 불편 제거.
+
+- 후보 경로를 (1) caller 지정 → (2) 플러그인 트리 → (3) `$PWD/<APP>/<APP>` / `$PWD/<APP>` / `$PWD` → (4) `$SEAMOS_WORKSPACE/<APP>/<APP>` 순으로 탐색.
+- 각 후보는 `com.bosch.fsp.<APP>` 디렉터리 존재로 검증.
+- 실패 시 시도된 후보 목록과 수정 방법을 명시.
+
+### Added — `regen-sdk-app --reset-tests` (시뮬레이터 스캐폴드 강제 재생성)
+
+Bosch `UPDATE_SDK_APP` 이 `.gen.tests/` 트리 전체를 user-data 로 간주해 절대 덮어쓰지 않는 보존 정책상, **인터페이스에 새 플러그인을 추가해도 `SDKTest.java` 가 옛 provider 만 하드코딩한 채 남아 새 시그널이 publish 되지 않는** 구조적 결함을 우회.
+
+- `--reset-tests`: UPDATE_SDK_APP 호출 직전 `<PROJECT>/com.bosch.fsp.<PROJECT>.gen.tests/` 삭제 → FD 가 현재 FSP/Manifest 기준으로 시뮬레이터를 재생성.
+- 사용자 변경 자동 감지: `src/**/*.java` 중 `.classpath` 보다 mtime 이 새로운 파일이 있으면 거부. `--i-know-this-deletes-test-code` 로만 우회.
+- `--dry-run` 출력에 reset 동작 명시.
+- SKILL.md 의 시나리오 매트릭스에 인터페이스 변경 + 시뮬레이터 갱신 케이스 추가.
+
+### Notes
+
+- 컨테이너 내부의 `__pycache__/`, `*.pyc` 가 워크스페이스 bind-mount 로 호스트에 노출될 수 있어 `.gitignore` 에 추가.
+
+---
+
 ## [0.5.2] — 2026-04-28
 
 ### Fixed — interface 변경 시 사용자 작성 코드 손실 (data-loss bug)

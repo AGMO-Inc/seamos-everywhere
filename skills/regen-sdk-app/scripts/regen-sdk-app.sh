@@ -20,6 +20,15 @@
 #   --process-timer DUR         app.process.timer (default from context or 1s)
 #   --mvn-args STR              Extra Maven args (default from context or empty)
 #   --image-tag TAG             Docker image (default: seamos-fd-headless:latest)
+#   --reset-tests               Delete <PROJECT>/com.bosch.fsp.<PROJECT>.gen.tests/
+#                               before UPDATE_SDK_APP so FD regenerates the
+#                               simulator scaffold (SDKTest.java, sample data,
+#                               Manifest.xml). Required when interfaces changed
+#                               (e.g. new plugin added). Refuses to run if user
+#                               files are detected; pass --i-know-this-deletes-test-code
+#                               to override.
+#   --i-know-this-deletes-test-code  Acknowledge that --reset-tests removes any
+#                                     hand-written code under .gen.tests/ .
 #   --dry-run                   Print resolved paths + docker cmd, do not run
 #   --help                      Show this help
 set -euo pipefail
@@ -86,6 +95,8 @@ PROCESS_TIMER=""
 MVN_ARGS=""
 IMAGE_TAG="seamos-fd-headless:latest"
 DRY_RUN=0
+RESET_TESTS=0
+ACK_DELETES_TESTS=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -96,6 +107,9 @@ while [[ $# -gt 0 ]]; do
     --process-timer)     PROCESS_TIMER="${2:-}"; shift 2 ;;
     --mvn-args)          MVN_ARGS="${2:-}"; shift 2 ;;
     --image-tag)         IMAGE_TAG="${2:-}"; shift 2 ;;
+    --reset-tests)       RESET_TESTS=1; shift ;;
+    --i-know-this-deletes-test-code)
+                         ACK_DELETES_TESTS=1; shift ;;
     --dry-run)           DRY_RUN=1; shift ;;
     --help|-h)           usage; exit 0 ;;
     *) echo "ERROR: unknown argument: $1" >&2; usage >&2; exit 64 ;;
@@ -219,6 +233,10 @@ if [[ $DRY_RUN -eq 1 ]]; then
   echo "[dry-run] CONFIG_PROP=$CONFIG_PROP"
   echo "[dry-run] CONTEXT_FILE=$CONTEXT_FILE"
   echo "[dry-run] operation=UPDATE_SDK_APP codegen_type=$CODEGEN_TYPE image=$IMAGE_TAG"
+  echo "[dry-run] reset_tests=$RESET_TESTS ack_deletes_tests=$ACK_DELETES_TESTS"
+  if [[ $RESET_TESTS -eq 1 ]]; then
+    echo "[dry-run] would rm -rf: $WORKSPACE/$PROJECT_NAME/com.bosch.fsp.$PROJECT_NAME.gen.tests"
+  fi
   echo "[dry-run] docker cmd: ${DOCKER_CMD[*]}"
   exit 0
 fi
@@ -272,6 +290,39 @@ ensure_image() {
   return 69
 }
 ensure_image "$IMAGE_TAG" || exit 69
+
+# ─── --reset-tests: drop FD-generated simulator scaffold so it regenerates ─
+# Bosch's UPDATE_SDK_APP treats the entire .gen.tests/ tree as user-data and
+# never overwrites it. After an interface change (e.g. adding GPSPlugin), the
+# old SDKTest.java still hardcodes only the original providers (e.g. only
+# IMUProvider) and no GPS signals are published. Deleting .gen.tests/ before
+# UPDATE_SDK_APP forces FD to regenerate it from the current FSP/Manifest.
+GEN_TESTS_DIR="$WORKSPACE/$PROJECT_NAME/com.bosch.fsp.$PROJECT_NAME.gen.tests"
+if [[ $RESET_TESTS -eq 1 ]]; then
+  if [[ ! -d "$GEN_TESTS_DIR" ]]; then
+    echo "[regen-sdk-app] --reset-tests: directory absent, nothing to delete: $GEN_TESTS_DIR" >&2
+  else
+    # Heuristic: any .java under src/ whose mtime is newer than .classpath
+    # (which FD writes once at scaffold time) is likely user-edited.
+    USER_TOUCHED=()
+    if [[ -f "$GEN_TESTS_DIR/.classpath" ]]; then
+      while IFS= read -r f; do
+        USER_TOUCHED+=("$f")
+      done < <(find "$GEN_TESTS_DIR/src" -type f -name '*.java' \
+                 -newer "$GEN_TESTS_DIR/.classpath" 2>/dev/null || true)
+    fi
+    if (( ${#USER_TOUCHED[@]} > 0 )) && [[ $ACK_DELETES_TESTS -ne 1 ]]; then
+      echo "ERROR: --reset-tests would delete files newer than .classpath under $GEN_TESTS_DIR/src/:" >&2
+      printf '  %s\n' "${USER_TOUCHED[@]}" >&2
+      echo >&2
+      echo "If those edits are throw-away scaffolding, re-run with --i-know-this-deletes-test-code." >&2
+      echo "If they're real user code, copy them out first, then re-run." >&2
+      exit 64
+    fi
+    echo "[regen-sdk-app] --reset-tests: removing $GEN_TESTS_DIR" >&2
+    rm -rf "$GEN_TESTS_DIR"
+  fi
+fi
 
 # ─── Run UPDATE_SDK_APP ────────────────────────────────────────────────────
 set +e
