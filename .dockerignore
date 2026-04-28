@@ -3,3 +3,4 @@
 # Allow Dockerfile build context subset
 !docker/
 !ref/Linux_HeadlessFD/*.tar.gz
+!ref/FD/*.tar.gz
