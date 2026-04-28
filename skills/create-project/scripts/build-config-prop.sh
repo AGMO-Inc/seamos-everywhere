@@ -10,7 +10,7 @@ Usage: build-config-prop.sh [options]
 Options:
   --project-name <name>         FSP project name (required)
   --app-project-name <name>     App project name (default: same as --project-name)
-  --codegen-type JAVA|CPP       Code generation type (default: JAVA)
+  --codegen-type JAVA|CPP       Code generation type (default: CPP)
   --process-timer <duration>    app.process.timer value (default: 1s)
   --mvn-args <string>           Maven extra args (default: empty)
   --app-project-path <path>     Existing app project path (UPDATE_SDK_APP only).
@@ -37,7 +37,7 @@ EOF
 
 PROJECT_NAME=""
 APP_PROJECT_NAME=""
-CODEGEN_TYPE="JAVA"
+CODEGEN_TYPE="CPP"
 PROCESS_TIMER="1s"
 MVN_ARGS=""
 APP_PROJECT_PATH=""

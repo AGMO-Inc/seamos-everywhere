@@ -3,7 +3,7 @@ name: create-project
 description: Create a new SeamOS project (FSP + SDK/APP skeleton) via FD Headless. Triggers — "프로젝트 생성", "create project", "앱 생성", "create app", "create-app", "SDK 생성", "create-project", "FSP 생성", "skeleton generate", "SeamOS 프로젝트 만들어".
 user-invocable: true
 allowed-tools: Read, Glob, Grep, Bash, Write, Edit
-argument-hint: "--project-name <NAME> [--skip-sdk-app] [--codegen-type JAVA|CPP] [--interface-json <PATH>] [--force-clean|--resume]"
+argument-hint: "--project-name <NAME> [--skip-sdk-app] [--codegen-type CPP|JAVA] [--interface-json <PATH>] [--force-clean [--i-know-this-deletes-app-code] | --regen-fsp-only | --resume]"
 ---
 
 # Create SeamOS Project (FSP + SDK/APP skeleton)
@@ -17,7 +17,7 @@ UI type is fixed to `"Custom UI"`. Platforms: Windows (WSL2 / Git Bash), Linux, 
 Before invoking `create-project.sh`, an LLM agent MUST confirm the following with the user — these are user-owned decisions, not defaults to assume:
 
 1. **`--project-name`** — the project name.
-2. **`--codegen-type`** — `JAVA` or `CPP`. The script will exit `64` if this is missing in non-interactive mode. Ask explicitly; do not guess.
+2. **`--codegen-type`** — `CPP` (default) or `JAVA`. For `--regen-fsp-only` and resume scenarios the script auto-detects from the existing app project (`CMakeLists.txt` → `CPP`, `pom.xml` → `JAVA`); for fresh projects ask the user explicitly. The script exits `64` if codegen is unresolved in non-interactive mode.
 3. **Interface JSON source** — whether an existing `<PROJECT>-interface.json` SSOT should be reused, a new file provided via `--interface-json`, or synthesized interactively from offlineDB.
 
 Only proceed to `Bash` invocation once these three are unambiguous.
@@ -86,7 +86,7 @@ Layout after success (Stage 1A + 1B + 1C):
 | Workspace only (no SSOT) | Workspace promoted to SSOT with stderr warning |
 | Neither exists | Claude flow must synthesize interactively before invoking |
 
-`--force-clean` wipes the workspace but **preserves** the SSOT, `seamos-assets/`, and `.seamos-context.json`.
+`--force-clean` wipes the workspace but **preserves** the SSOT, `seamos-assets/`, and `.seamos-context.json`. Because the wipe also deletes `<PROJECT>/<PROJECT>_<APP>/` (your hand-written app code), the script refuses to proceed when that folder is non-empty unless `--i-know-this-deletes-app-code` is also passed. To regenerate just the FSP after an interface change while preserving app code, use `--regen-fsp-only` instead.
 
 ### offlineDB Resolution
 
@@ -108,7 +108,7 @@ On successful exit, atomically upserts `last_project` in `$USER_ROOT/.seamos-con
     "fsp_completed_at": "<ISO-8601 UTC>",
     "sdk_app_completed_at": "<ISO-8601 UTC>",
     "app_project_name": "<APP_NAME>",
-    "codegen_type": "JAVA",
+    "codegen_type": "CPP",
     "app_project_path": "<USER_ROOT>/<PROJECT>/<PROJECT>/<PROJECT>_<APP_NAME>"
   }
 }
@@ -157,12 +157,24 @@ Resume behavior is driven by `(workspace-exists, fsp_completed_at, sdk_app_compl
 |---|-----------|--------------------|------------------------|--------|
 | 1 | ✓ | ✓ | ✓ | `[resume] already complete` → exit 0 |
 | 2 | ✓ | ✓ | ✗ | Resume Stage 1B (skip 1A) |
-| 3 | ✓ | ✗ | — | Stale workspace — error, suggest `--force-clean` |
+| 3 | ✓ | ✗ | — | Stale workspace — error, suggest `--force-clean` (or `--regen-fsp-only` if user code is present) |
 | 4 | ✗ | ✓ | ✓ | State mismatch — error, suggest `--force-clean` |
 | 5 | ✗ | ✓ | ✗ | State mismatch — error, suggest `--force-clean` |
 | 6 | ✗ | ✗ | ✗ | Normal fresh run |
 
-`--force-clean` bypasses the matrix entirely (wipes workspace, preserves SSOT / seamos-assets / context).
+`--force-clean` bypasses the matrix entirely (wipes workspace, preserves SSOT / seamos-assets / context). `--regen-fsp-only` also bypasses the matrix and only deletes `com.bosch.fsp.<PROJECT>/`, leaving the app project untouched and skipping Stage 1B (call `regen-sdk-app` afterwards to merge the refreshed SDK into the preserved app code).
+
+### Recipe: interface JSON changed, keep app code
+
+```
+# 1. Update <PROJECT>-interface.json (or pass --interface-json <new-path>)
+# 2. Regenerate the FSP only — app project preserved
+create-project --project-name <PROJECT> --regen-fsp-only
+# 3. Merge the new SDK hooks into the existing app project
+regen-sdk-app
+```
+
+This replaces the older "`create-project --force-clean` then `regen-sdk-app`" advice, which destroyed user code.
 
 ## `.gitignore` Auto-Management (Policy 1)
 

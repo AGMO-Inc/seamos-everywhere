@@ -11,7 +11,10 @@
 # Flags:
 #   --project-name NAME         FSP project (overrides context.last_project.name)
 #   --app-project-name NAME     App project (overrides context)
-#   --codegen-type JAVA|CPP     (overrides context; defaults to JAVA if neither)
+#   --codegen-type JAVA|CPP     (overrides context; otherwise auto-detected from
+#                               the existing app project's build files —
+#                               CMakeLists.txt → CPP, pom.xml → JAVA — falling
+#                               back to CPP if neither is present)
 #   --app-project-path PATH     Host path to existing app project (overrides
 #                               context; required if context missing)
 #   --process-timer DUR         app.process.timer (default from context or 1s)
@@ -126,8 +129,30 @@ PROCESS_TIMER="${PROCESS_TIMER:-$(ctx '.last_project.process_timer')}"
 MVN_ARGS="${MVN_ARGS:-$(ctx '.last_project.mvn_args')}"
 WORKSPACE="$(ctx '.last_project.workspace_path')"
 
+# Auto-detect codegen.type from the existing app project's build files when
+# neither the flag nor context provided one. CPP is the team-wide default; JAVA
+# is detected only when an explicit Maven project is present.
+detect_codegen_from_app() {
+  local app_dir="$1"
+  [[ -d "$app_dir" ]] || return 1
+  if [[ -f "$app_dir/CMakeLists.txt" ]]; then
+    echo "CPP"; return 0
+  fi
+  if [[ -f "$app_dir/pom.xml" ]]; then
+    echo "JAVA"; return 0
+  fi
+  return 1
+}
+
+if [[ -z "$CODEGEN_TYPE" && -n "$APP_PROJECT_PATH" ]]; then
+  if DETECTED="$(detect_codegen_from_app "$APP_PROJECT_PATH")"; then
+    echo "[regen-sdk-app] auto-detected codegen.type=$DETECTED from $APP_PROJECT_PATH" >&2
+    CODEGEN_TYPE="$DETECTED"
+  fi
+fi
+
 # Apply silent defaults for truly optional fields
-[[ -z "$CODEGEN_TYPE"   ]] && CODEGEN_TYPE="JAVA"
+[[ -z "$CODEGEN_TYPE"   ]] && CODEGEN_TYPE="CPP"
 [[ -z "$PROCESS_TIMER"  ]] && PROCESS_TIMER="1s"
 [[ -z "$APP_PROJECT_NAME" ]] && APP_PROJECT_NAME="$PROJECT_NAME"
 
@@ -207,7 +232,8 @@ fi
 if [[ ! -d "$FSP_PATH" ]]; then
   echo "ERROR: FSP project not found: $FSP_PATH" >&2
   echo "       The FSP must already be current. If interface.json changed," >&2
-  echo "       run \`create-project --force-clean\` first to regenerate the FSP." >&2
+  echo "       run \`create-project --regen-fsp-only\` first to regenerate the FSP" >&2
+  echo "       without touching your app code, then re-run regen-sdk-app." >&2
   exit 64
 fi
 

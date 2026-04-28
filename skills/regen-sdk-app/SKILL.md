@@ -12,19 +12,22 @@ Re-runs FD Headless in **UPDATE_SDK_APP** mode against an existing workspace. Bo
 
 ## When to Use This vs. Alternatives
 
-| Scenario | Skill |
-|---|---|
-| Brand-new project, no workspace yet | `create-project` (Stage 1A + 1B) |
-| FSP/interface unchanged, just want a clean app skeleton from scratch | `create-project --resume` (re-runs Stage 1B = GENERATE_SDK_APP — **destroys** local app edits) |
-| FSP changed (via regenerated FSP) → merge into existing app project, keep user code | **this skill** (`regen-sdk-app`) |
-| Interface JSON itself changed — FSP must be regenerated first | `create-project --force-clean` **then** `regen-sdk-app` |
-| Upload a new `.fif` version to the SDM marketplace | `update-app` — wrong layer, different concept |
+| Scenario | Skill | User code preserved? |
+|---|---|---|
+| Brand-new project, no workspace yet | `create-project` (Stage 1A + 1B) | n/a |
+| FSP/interface unchanged, just want a clean app skeleton from scratch | `create-project --resume` (re-runs Stage 1B = GENERATE_SDK_APP — **destroys** local app edits) | ❌ |
+| FSP already current (e.g. edited via FD GUI), only the SDK/skeleton needs to be merged into the existing app project | **this skill** (`regen-sdk-app`) | ✅ |
+| `interface.json` changed — FSP is now stale, but you want to keep your app code | `create-project --regen-fsp-only` **then** `regen-sdk-app` | ✅ |
+| Workspace is dirty / corrupted, OK to lose user app code | `create-project --force-clean --i-know-this-deletes-app-code` | ❌ (intentional) |
+| Upload a new `.fif` version to the SDM marketplace | `update-app` — wrong layer, different concept | n/a |
+
+**Why `--force-clean` is no longer the default for interface changes**: it deletes the entire workspace including `<PROJECT>_<APP>/` (your hand-written code). `--regen-fsp-only` only deletes `com.bosch.fsp.<PROJECT>/` and re-runs `GENERATE_FSP`, leaving the app project intact for `regen-sdk-app` to merge into.
 
 ## Prerequisites
 
 1. **USER_ROOT**: a directory containing `.mcp.json` (discovered by upward traversal from `$PWD`).
 2. **Context populated**: `$USER_ROOT/.seamos-context.json` must have `last_project.{name, workspace_path, app_project_name, codegen_type, app_project_path, sdk_app_completed_at}`. This means `create-project` (including Stage 1B) was already executed successfully. If context is missing or stale, tell the user to run `create-project` first.
-3. **FSP current**: Whatever is in `<workspace>/<PROJECT>/com.bosch.fsp.<PROJECT>/` is taken as truth. This skill will NOT touch the FSP or re-validate interface JSON. If the user's reason for regen is "I changed interface.json", route them to `create-project --force-clean` first.
+3. **FSP current**: Whatever is in `<workspace>/<PROJECT>/com.bosch.fsp.<PROJECT>/` is taken as truth. This skill will NOT touch the FSP or re-validate interface JSON. If the user's reason for regen is "I changed interface.json", route them to `create-project --regen-fsp-only` first — that re-runs `GENERATE_FSP` against the new interface JSON without touching the app project (so this skill can then merge the refreshed SDK into the preserved user code).
 4. **Docker**: running with the default image `seamos-fd-headless:latest` (or local build / `--image-tag` override).
 
 ## Execution Flow
@@ -46,7 +49,7 @@ Read from context; CLI flags override. Required fields and resolution order:
 |---|---|---|---|
 | `PROJECT_NAME` | `--project-name` | `last_project.name` | error exit 64 |
 | `APP_PROJECT_NAME` | `--app-project-name` | `last_project.app_project_name` | = `PROJECT_NAME` |
-| `CODEGEN_TYPE` | `--codegen-type` | `last_project.codegen_type` | `JAVA` |
+| `CODEGEN_TYPE` | `--codegen-type` | `last_project.codegen_type` | auto-detected from app project (`CMakeLists.txt` → `CPP`, `pom.xml` → `JAVA`); falls back to `CPP` |
 | `PROCESS_TIMER` | `--process-timer` | `last_project.process_timer` | `1s` |
 | `MVN_ARGS` | `--mvn-args` | `last_project.mvn_args` | `""` |
 | `APP_PROJECT_PATH` | `--app-project-path` (host path) | `last_project.app_project_path` | error exit 64 |
@@ -135,7 +138,7 @@ No docker invocation, no disk mutation. Emit these path variables to stdout (mir
 
 ## Important Notes
 
-- **This skill refuses to run FSP regeneration**. FSP drift is handled explicitly by `create-project --force-clean` to keep responsibilities clean (single-responsibility per skill). If the user mentions interface changes, surface the two-step recipe instead of silently chaining.
+- **This skill refuses to run FSP regeneration**. FSP drift is handled explicitly by `create-project --regen-fsp-only` (FSP-only, app code preserved) or `create-project --force-clean --i-know-this-deletes-app-code` (full reset, opt-in). Single-responsibility per skill. If the user mentions interface changes, surface the two-step recipe instead of silently chaining.
 - **Backing up app code**: UPDATE_SDK_APP is supposed to preserve your source, but since we cannot audit Bosch's merge logic, suggest the user commit or snapshot `<WORKSPACE>/<PROJECT>/<PROJECT>_<APP>/` before running — especially on the first use.
 - **`build-config-prop.sh` is shared** with `create-project` and lives under `skills/create-project/scripts/`. The only difference: this skill always passes `--app-project-path`; `create-project` Stage 1B never does.
 - **Context schema**: see `skills/shared-references/seamos-context-cache.md` — this skill adds `sdk_app_updated_at` (preserves `sdk_app_completed_at`).

@@ -100,7 +100,19 @@ Options:
                                 GENERATE_SDK_APP | UPDATE_SDK_APP. Prefer --skip-sdk-app
   --image-tag <tag>             Docker image tag (default: ${FD_IMAGE_PINNED_TAG})
   --dry-run                     Print assembled commands and path variables, exit 0
-  --force-clean                 Remove existing workspace (preserves seamos-assets/ and SSOT)
+  --force-clean                 Remove existing workspace (preserves seamos-assets/ and SSOT).
+                                Refuses to run when the app project folder is non-empty
+                                unless --i-know-this-deletes-app-code is also passed.
+  --i-know-this-deletes-app-code
+                                Acknowledge that --force-clean will delete user-written
+                                app code under <workspace>/<PROJECT>/<PROJECT>_<APP>/.
+                                Required guard for --force-clean over a non-empty app project.
+  --regen-fsp-only              Re-run Stage 1A (GENERATE_FSP) only. Deletes only the FSP
+                                folder (com.bosch.fsp.<PROJECT>/) and preserves the app
+                                project folder. Use this when the interface JSON changed
+                                and the SDK/skeleton needs to be refreshed via regen-sdk-app
+                                without losing user code. Mutually exclusive with
+                                --force-clean / --resume / --skip-sdk-app.
   --resume                      Reuse existing workspace; resume from last stage
   --help                        Show this help
 
@@ -131,6 +143,8 @@ IMAGE_TAG="$FD_IMAGE_PINNED_TAG"
 DRY_RUN=0
 FORCE_CLEAN=0
 RESUME=0
+REGEN_FSP_ONLY=0
+ACK_DELETES_APP_CODE=0
 
 if [[ $# -eq 0 ]]; then
   usage >&2
@@ -151,6 +165,8 @@ while [[ $# -gt 0 ]]; do
     --image-tag)         IMAGE_TAG="${2:-}"; shift 2 ;;
     --dry-run)           DRY_RUN=1; shift ;;
     --force-clean)       FORCE_CLEAN=1; shift ;;
+    --regen-fsp-only)    REGEN_FSP_ONLY=1; shift ;;
+    --i-know-this-deletes-app-code) ACK_DELETES_APP_CODE=1; shift ;;
     --resume)            RESUME=1; shift ;;
     --help|-h)           usage; exit 0 ;;
     *) echo "ERROR: unknown argument: $1" >&2; usage >&2; exit 64 ;;
@@ -166,6 +182,24 @@ fi
 if [[ $FORCE_CLEAN -eq 1 && $RESUME -eq 1 ]]; then
   echo "ERROR: --force-clean and --resume are mutually exclusive" >&2
   exit 64
+fi
+
+# --regen-fsp-only is mutually exclusive with the other workspace-state flags.
+# Allowing combinations is dangerous: regen-fsp-only deliberately preserves the
+# app project, while force-clean deletes it; mixing them silently loses code.
+if [[ $REGEN_FSP_ONLY -eq 1 ]]; then
+  if [[ $FORCE_CLEAN -eq 1 ]]; then
+    echo "ERROR: --regen-fsp-only and --force-clean are mutually exclusive" >&2
+    exit 64
+  fi
+  if [[ $RESUME -eq 1 ]]; then
+    echo "ERROR: --regen-fsp-only and --resume are mutually exclusive" >&2
+    exit 64
+  fi
+  if [[ $SKIP_SDK_APP -eq 1 ]]; then
+    echo "ERROR: --regen-fsp-only already implies skipping Stage 1B; do not pass --skip-sdk-app" >&2
+    exit 64
+  fi
 fi
 
 # --operation vs --skip-sdk-app policy (v2 I10)
@@ -300,11 +334,58 @@ fi
 RUN_STAGE_1A=1
 RUN_STAGE_1B=1
 
-if [[ $FORCE_CLEAN -eq 1 ]]; then
-  echo "[workspace] --force-clean: removing $ABS_WS (preserving seamos-assets/ and SSOT)"
-  # Preserve: USER_ROOT/seamos-assets/, USER_ROOT/<PROJECT>-interface.json, USER_ROOT/.seamos-context.json
-  if [[ -d "$ABS_WS" ]]; then
-    rm -rf "$ABS_WS"
+# Path of the app project that holds user-written code. Both --force-clean's
+# guard and --regen-fsp-only's preserve-list need this resolved before either
+# branch runs.
+APP_PROJECT_DIR="${ABS_WS}/${PROJECT_NAME}/${PROJECT_NAME}_${APP_PROJECT_NAME}"
+FSP_DIR="${ABS_WS}/${PROJECT_NAME}/com.bosch.fsp.${PROJECT_NAME}"
+
+# Returns 0 when the path is a non-empty directory (any entry, including dotfiles).
+app_project_has_code() {
+  [[ -d "$1" ]] || return 1
+  [[ -n "$(ls -A "$1" 2>/dev/null)" ]]
+}
+
+if [[ $REGEN_FSP_ONLY -eq 1 ]]; then
+  # Refresh only the FSP folder. Leaves the app project (user code) and the
+  # rest of the workspace untouched. Stage 1B is skipped — call regen-sdk-app
+  # afterwards to merge new SDK hooks into the preserved app project.
+  if [[ ! -d "$ABS_WS" ]]; then
+    echo "ERROR: --regen-fsp-only requires an existing workspace at $ABS_WS — run create-project first" >&2
+    exit 64
+  fi
+  if [[ -d "$FSP_DIR" ]]; then
+    if [[ $DRY_RUN -eq 1 ]]; then
+      echo "[workspace] --regen-fsp-only [dry-run]: would remove $FSP_DIR (would preserve app project at $APP_PROJECT_DIR)"
+    else
+      echo "[workspace] --regen-fsp-only: removing FSP folder $FSP_DIR (preserving app project at $APP_PROJECT_DIR)"
+      rm -rf "$FSP_DIR"
+    fi
+  else
+    echo "[workspace] --regen-fsp-only: no existing FSP folder at $FSP_DIR — will generate fresh"
+  fi
+  RUN_STAGE_1A=1
+  RUN_STAGE_1B=0
+  WS_EXISTS=1
+elif [[ $FORCE_CLEAN -eq 1 ]]; then
+  # Guardrail: --force-clean wipes the workspace, which includes the app
+  # project. Refuse to do so silently when the app project has user code,
+  # unless the caller explicitly acknowledges the loss.
+  if app_project_has_code "$APP_PROJECT_DIR" && [[ $ACK_DELETES_APP_CODE -ne 1 ]]; then
+    echo "ERROR: --force-clean would delete user-written app code at:" >&2
+    echo "         $APP_PROJECT_DIR" >&2
+    echo "       Pass --i-know-this-deletes-app-code to confirm, OR use --regen-fsp-only" >&2
+    echo "       to refresh the FSP without touching the app project." >&2
+    exit 64
+  fi
+  if [[ $DRY_RUN -eq 1 ]]; then
+    echo "[workspace] --force-clean [dry-run]: would remove $ABS_WS (would preserve seamos-assets/ and SSOT)"
+  else
+    echo "[workspace] --force-clean: removing $ABS_WS (preserving seamos-assets/ and SSOT)"
+    # Preserve: USER_ROOT/seamos-assets/, USER_ROOT/<PROJECT>-interface.json, USER_ROOT/.seamos-context.json
+    if [[ -d "$ABS_WS" ]]; then
+      rm -rf "$ABS_WS"
+    fi
   fi
   WS_EXISTS=0
 else
@@ -399,17 +480,47 @@ DOCKER_CMD_1B=(
   "$IMAGE_TAG"
 )
 
-# Resolve CODEGEN_TYPE for Stage 1B if needed.
+# Auto-detect codegen.type from an existing app project (regen-fsp-only or
+# resume scenarios). CPP is the team-wide default; JAVA is only chosen when an
+# explicit Maven project is detected. Detection happens before the interactive
+# prompt so the resolved value is offered as the default.
+detect_codegen_from_app() {
+  local app_dir="$1"
+  [[ -d "$app_dir" ]] || return 1
+  if [[ -f "$app_dir/CMakeLists.txt" ]]; then
+    echo "CPP"; return 0
+  fi
+  if [[ -f "$app_dir/pom.xml" ]]; then
+    echo "JAVA"; return 0
+  fi
+  return 1
+}
+
+if [[ -z "$CODEGEN_TYPE" ]]; then
+  if DETECTED="$(detect_codegen_from_app "$APP_PROJECT_DIR")"; then
+    echo "[codegen] auto-detected codegen.type=$DETECTED from $APP_PROJECT_DIR" >&2
+    CODEGEN_TYPE="$DETECTED"
+  elif [[ -f "$CONTEXT_FILE" ]]; then
+    CTX_CODEGEN="$(jq -r '.last_project.codegen_type // empty' "$CONTEXT_FILE" 2>/dev/null || true)"
+    if [[ -n "$CTX_CODEGEN" ]]; then
+      echo "[codegen] using codegen.type=$CTX_CODEGEN from .seamos-context.json" >&2
+      CODEGEN_TYPE="$CTX_CODEGEN"
+    fi
+  fi
+fi
+
+# Resolve CODEGEN_TYPE for Stage 1B if still unresolved.
 # Fail closed when invoked without a TTY (e.g., by an LLM agent) so the caller is
-# forced to surface the choice to the user instead of silently defaulting to JAVA.
+# forced to surface the choice to the user instead of silently defaulting.
+# Default is CPP — the team-wide convention for SeamOS apps.
 if [[ $RUN_STAGE_1B -eq 1 && -z "$CODEGEN_TYPE" ]]; then
   if [[ -t 0 && $DRY_RUN -eq 0 ]]; then
-    read -r -p "Select codegen.type [JAVA/CPP] (default: JAVA): " CODEGEN_TYPE_INPUT
-    CODEGEN_TYPE="${CODEGEN_TYPE_INPUT:-JAVA}"
+    read -r -p "Select codegen.type [CPP/JAVA] (default: CPP): " CODEGEN_TYPE_INPUT
+    CODEGEN_TYPE="${CODEGEN_TYPE_INPUT:-CPP}"
     CODEGEN_TYPE="$(echo "$CODEGEN_TYPE" | tr '[:lower:]' '[:upper:]')"
   else
     echo "ERROR: --codegen-type is required when running non-interactively (no TTY)." >&2
-    echo "       Pass --codegen-type JAVA or --codegen-type CPP explicitly." >&2
+    echo "       Pass --codegen-type CPP or --codegen-type JAVA explicitly." >&2
     echo "       (If you are an LLM agent, ask the user which codegen type they want before invoking.)" >&2
     exit 64
   fi
@@ -424,7 +535,8 @@ if [[ $DRY_RUN -eq 1 ]]; then
   echo "[dry-run] BUILD_DIR=${USER_ROOT}/seamos-assets/builds"
   echo "[dry-run] CONTEXT_FILE=$CONTEXT_FILE"
   echo "[dry-run] SSOT_PATH=$SSOT_PATH"
-  echo "[dry-run] operation=$OPERATION skip_sdk_app=$SKIP_SDK_APP force_clean=$FORCE_CLEAN resume=$RESUME"
+  echo "[dry-run] operation=$OPERATION skip_sdk_app=$SKIP_SDK_APP force_clean=$FORCE_CLEAN resume=$RESUME regen_fsp_only=$REGEN_FSP_ONLY ack_deletes_app_code=$ACK_DELETES_APP_CODE"
+  echo "[dry-run] APP_PROJECT_DIR=$APP_PROJECT_DIR FSP_DIR=$FSP_DIR"
   if [[ $RUN_STAGE_1A -eq 1 ]]; then
     echo "[dry-run] Stage 1A GENERATE_FSP: ${DOCKER_CMD_1A[*]}"
   fi
