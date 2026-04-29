@@ -1,14 +1,14 @@
 ---
 name: update-app
-description: Upload a new version of an existing SeamOS app to the SDM marketplace. Use this skill whenever the user wants to update, upgrade, or push a new version of their app. Triggers on "앱 업데이트", "버전 업데이트", "새 버전 올려", "update app", "new version", "버전 업로드", "앱 버전". Also use when the user mentions updating a .fif file for an app that already exists on the marketplace, or wants to deploy a patch/update to a released app.
+description: Upload a new version of an existing SeamOS app to the SeamOS marketplace. Use this skill whenever the user wants to update, upgrade, or push a new version of their app. Triggers on "앱 업데이트", "버전 업데이트", "새 버전 올려", "update app", "new version", "버전 업로드", "앱 버전". Also use when the user mentions updating a .fif file for an app that already exists on the marketplace, or wants to deploy a patch/update to a released app.
 user-invocable: true
 allowed-tools: Read, Glob, Grep, Bash, Write, Edit
 argument-hint: "[appId] [--feu-type FEU] [--arch ARCH] [--dry-run]"
 ---
 
-# Update App Version on SDM Marketplace
+# Update App Version on SeamOS Marketplace
 
-Upload a new version (.fif) of an existing app to the SDM marketplace. Unlike `upload-app` (which creates a brand-new app with full metadata and images), this skill only requires variant info and the app package file.
+Upload a new version (.fif) of an existing app to the SeamOS marketplace. Unlike `upload-app` (which creates a brand-new app with full metadata and images), this skill only requires variant info and the app package file.
 
 This skill does NOT use config.json. All version info is collected interactively from the user, one question at a time.
 
@@ -21,7 +21,7 @@ This skill does NOT use config.json. All version info is collected interactively
 
 ## Prerequisites
 
-1. `.mcp.json` at project root with `sdm-marketplace` server configured (API key with APP_DEPLOY scope)
+1. `.mcp.json` at project root with `seamos-marketplace` server configured (API key with APP_DEPLOY scope)
 2. The app must already exist on the marketplace (use `upload-app` first)
 3. A `.fif` app package in `seamos-assets/builds/`
 
@@ -37,11 +37,11 @@ This skill only reads/writes `appId`, `appName`, and `updatedAt` — it preserve
 
 **A. Parse MCP config:**
 Read `.mcp.json` from project root. Extract:
-- `url` from `mcpServers.sdm-marketplace.url` — strip `/mcp` suffix to get base URL (e.g., `http://localhost:8088`)
-- `X-API-Key` from `mcpServers.sdm-marketplace.headers.X-API-Key`
+- `url` from `mcpServers.seamos-marketplace.url` — strip `/mcp` suffix to get base URL (e.g., `http://localhost:8088`)
+- `X-API-Key` from `mcpServers.seamos-marketplace.headers.X-API-Key`
 
 **B. List user's apps:**
-Call `list_apps` MCP tool (`mcp__sdm-marketplace__list_apps`). This returns two groups:
+Call `list_apps` MCP tool (`mcp__seamos-marketplace__list_apps`). This returns two groups:
 - `personalApps` — apps owned by the user directly
 - `organizationApps` — apps belonging to the user's organization (may be empty if user has no org)
 
@@ -55,7 +55,7 @@ Scan `seamos-assets/builds/` for `.fif` files.
 After initialization completes:
 
 **Hard stops (check first):**
-- `.mcp.json` missing or no sdm-marketplace config → guide user to create it
+- `.mcp.json` missing or no seamos-marketplace config → guide user to create it
 - No `.fif` files in `seamos-assets/builds/` → tell user to place their build file
 
 #### 2-1. Select App
@@ -99,7 +99,7 @@ If `organizationApps` is empty, skip the "조직 앱" section entirely and only 
 
 #### 2-2. Fetch App Status
 
-Once the appId is determined, immediately call `get_app_status` MCP tool (`mcp__sdm-marketplace__get_app_status`) with the selected appId. Extract:
+Once the appId is determined, immediately call `get_app_status` MCP tool (`mcp__seamos-marketplace__get_app_status`) with the selected appId. Extract:
 - Current version number(s) per feuType *(if available — see fallback below)*
 - List of registered feuTypes for this app *(if available — see fallback below)*
 
@@ -324,6 +324,6 @@ This ensures the next skill invocation (whether `update-app` or `manage-device-a
 
 ## Important Notes
 
-For shared rules (API key masking, feuType matching, file path conventions), see `skills/shared-references/sdm-common-rules.md`.
+For shared rules (API key masking, feuType matching, file path conventions), see `skills/shared-references/seamos-common-rules.md`.
 
 **Update-app specific:** No config.json dependency. This skill collects all input interactively and does not read or write `seamos-assets/config.json` — that file belongs to `upload-app`.

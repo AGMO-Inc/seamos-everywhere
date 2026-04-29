@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# SDM Marketplace App Version Update Script
+# SeamOS Marketplace App Version Update Script
 # Uploads a new version of an existing app via multipart/form-data
 
 usage() {
@@ -9,7 +9,7 @@ usage() {
 Usage: $(basename "$0") [OPTIONS]
 
 Required:
-  --base-url URL        SDM backend base URL (e.g., http://localhost:8088)
+  --base-url URL        SeamOS backend base URL (e.g., http://localhost:8088)
   --api-key KEY         API key with APP_DEPLOY scope
   --app-id ID           Existing app ID to update
   --request JSON        Variants metadata as JSON string
@@ -138,7 +138,7 @@ if $DRY_RUN; then
 fi
 
 # Execute with one-shot retry on transient backend errors.
-# The SDM backend occasionally responds with "Could not open JPA EntityManager
+# The SeamOS backend occasionally responds with "Could not open JPA EntityManager
 # for transaction" (HTTP 500) on the first call after a cold start. A single
 # retry after a short sleep clears it. We only retry on 5xx — never on 4xx,
 # which is a real client-side problem the user should see immediately.

@@ -11,15 +11,15 @@ The plugin is composed of three layers:
 │                    Claude Code (User)                    │
 └──────────────┬───────────────────────┬───────────────────┘
                │                       │
-       ┌───────▼──────┐      ┌─────────▼───────┐
-       │  FD MCP Server│      │  SDM MCP Server │
-       │  (planned)    │      │  (implemented)  │
-       └───────┬───────┘      └─────────┬───────┘
-               │                        │
-       ┌───────▼───────┐       ┌────────▼───────┐
-       │  FD Headless  │       │  sdm-backend   │
-       │  CLI          │       │  API           │
-       └───────────────┘       └────────────────┘
+       ┌───────▼──────┐      ┌──────────▼─────────┐
+       │  FD MCP Server│      │  SeamOS MCP Server │
+       │  (planned)    │      │  (implemented)     │
+       └───────┬───────┘      └──────────┬─────────┘
+               │                         │
+       ┌───────▼───────┐       ┌─────────▼────────┐
+       │  FD Headless  │       │  seamos-backend  │
+       │  CLI          │       │  API             │
+       └───────────────┘       └──────────────────┘
 
          SeamOS Skills (REST/WS codegen, testing, docs, UI)
 ```
@@ -33,14 +33,14 @@ Wraps the FD (FeatureDesigner) headless CLI. Handles project lifecycle on the de
 ### 2. SeamOS Skills
 REST/WebSocket code generation, testing, documentation, and UI development — generalized patterns for SeamOS app development.
 
-### 3. SDM MCP Server (implemented)
-Wraps the sdm-backend API. Handles app publishing to the SeamOS marketplace.
+### 3. SeamOS MCP Server (implemented)
+Wraps the seamos-backend API. Handles app publishing to the SeamOS marketplace.
 
 - Protocol: JSON-RPC 2.0, Stateless, Streamable HTTP
 - Auth: `X-API-Key` header
 - URL: configurable via environment/`.mcp.json`
 
-## SDM MCP Tools
+## SeamOS MCP Tools
 
 | Tool | Required Scope | Description |
 |------|---------------|-------------|
@@ -61,7 +61,7 @@ The end-to-end workflow for building a SeamOS app with this plugin:
 | 2. Business Logic | SeamOS Skills | Data handling, WebSocket, REST API, verification |
 | 3. UI Development | SeamOS Skills | UI framework template, build & integration |
 | 4. Testing | FD MCP | Build, simulation, run |
-| 5. Deployment | SDM MCP | FIF upload, app registration to marketplace |
+| 5. Deployment | SeamOS MCP | FIF upload, app registration to marketplace |
 
 ## Project Structure
 
@@ -81,10 +81,10 @@ MCP servers are configured via `.mcp.json` at the project root. This file is **g
 ```json
 {
   "mcpServers": {
-    "sdm-marketplace": {
+    "seamos-marketplace": {
       "url": "http://localhost:8088/mcp",
       "headers": {
-        "X-API-Key": "${SDM_API_KEY}"
+        "X-API-Key": "${SEAMOS_API_KEY}"
       }
     }
   }
@@ -103,6 +103,6 @@ MCP servers are configured via `.mcp.json` at the project root. This file is **g
 
 ## 레포/프로젝트 정보
 - 조직: AGMO-Inc
-- 프로젝트명: AGMO SDM System
+- 프로젝트명: AGMO SeamOS System
 - 프로젝트 url: https://github.com/orgs/AGMO-Inc/projects/7
 - 레포: https://github.com/AGMO-Inc/seamos-everywhere

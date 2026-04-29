@@ -1,6 +1,6 @@
-# SDM Common Rules
+# SeamOS Common Rules
 
-Shared rules and constraints for SDM MCP Server integration skills (upload-app, update-app, manage-device-app).
+Shared rules and constraints for SeamOS MCP Server integration skills (upload-app, update-app, manage-device-app).
 
 ## 1. API Key Masking
 

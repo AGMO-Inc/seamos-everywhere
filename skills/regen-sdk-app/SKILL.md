@@ -20,7 +20,7 @@ Re-runs FD Headless in **UPDATE_SDK_APP** mode against an existing workspace. Bo
 | `interface.json` changed — FSP is now stale, but you want to keep your app code | `create-project --regen-fsp-only` **then** `regen-sdk-app` | ✅ |
 | `interface.json` changed AND you want the test simulator scaffold (.gen.tests/) regenerated to reflect new providers | `create-project --regen-fsp-only` **then** `regen-sdk-app --reset-tests` | ✅ app code; ❌ .gen.tests/ (regenerated) |
 | Workspace is dirty / corrupted, OK to lose user app code | `create-project --force-clean --i-know-this-deletes-app-code` | ❌ (intentional) |
-| Upload a new `.fif` version to the SDM marketplace | `update-app` — wrong layer, different concept | n/a |
+| Upload a new `.fif` version to the SeamOS marketplace | `update-app` — wrong layer, different concept | n/a |
 | `disk/` (all subdirectories) | `regen-sdk-app` preserves it; `build-fif` packages only `disk/seed/` — see build-fif skill | ✅ |
 
 **Why `--force-clean` is no longer the default for interface changes**: it deletes the entire workspace including `<PROJECT>_<APP>/` (your hand-written code). `--regen-fsp-only` only deletes `com.bosch.fsp.<PROJECT>/` and re-runs `GENERATE_FSP`, leaving the app project intact for `regen-sdk-app` to merge into.

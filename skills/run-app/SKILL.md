@@ -12,7 +12,7 @@ argument-hint: "--app-name <NAME> [--bind-all] [--app-port <PORT>] [--with-mqtt]
 
 # Run CPP and Java App Locally
 
-Launch a SeamOS app (CPP or Java codegen-type) inside the app-builder Docker container for local simulation. This is a developer-loop skill — it does not touch physical devices or the SDM marketplace.
+Launch a SeamOS app (CPP or Java codegen-type) inside the app-builder Docker container for local simulation. This is a developer-loop skill — it does not touch physical devices or the SeamOS marketplace.
 
 ## Prerequisites
 

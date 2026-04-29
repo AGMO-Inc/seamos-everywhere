@@ -1,10 +1,10 @@
 {
   "mcpServers": {
-    "sdm-marketplace": {
+    "seamos-marketplace": {
       "type": "http",
-      "url": "${user_config.sdm_api_url}/mcp",
+      "url": "${user_config.seamos_api_url}/mcp",
       "headers": {
-        "X-API-Key": "${user_config.sdm_api_key}"
+        "X-API-Key": "${user_config.seamos_api_key}"
       }
     }
   }

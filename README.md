@@ -19,14 +19,14 @@
 
 ## Overview
 
-**seamos-everywhere** bridges Claude Code to the SeamOS Development Marketplace (SDM). It covers the full app lifecycle: publishing a new app, pushing version updates, and managing apps on physical devices — all without leaving the terminal.
+**seamos-everywhere** bridges Claude Code to the SeamOS Marketplace. It covers the full app lifecycle: publishing a new app, pushing version updates, and managing apps on physical devices — all without leaving the terminal.
 
 ## Prerequisites
 
 | Tool | Required | Notes |
 |------|----------|-------|
 | **Claude Code** | Yes | Anthropic official CLI |
-| **SDM API Key** | Yes | `APP_DEPLOY` scope required |
+| **SeamOS API Key** | Yes | `APP_DEPLOY` scope required |
 
 ## Installation
 
@@ -46,12 +46,12 @@ claude --plugin-dir ./seamos-everywhere
 
 ## Configuration
 
-After installation, configure your SDM credentials:
+After installation, configure your SeamOS credentials:
 
 | Key | Description |
 |-----|-------------|
-| `sdm_api_url` | SDM API base URL (e.g., `https://dev.marketplace-api.seamos.io`) |
-| `sdm_api_key` | API key with `APP_DEPLOY` scope |
+| `seamos_api_url` | SeamOS API base URL (e.g., `https://dev.marketplace-api.seamos.io`) |
+| `seamos_api_key` | API key with `APP_DEPLOY` scope |
 
 > **Security:** API keys are stored securely by Claude Code and never committed to the repository.
 
@@ -93,7 +93,7 @@ Skills that interact with the marketplace expect a `seamos-assets/` directory at
 
 ### upload-app
 
-Publish a brand-new SeamOS app to the SDM marketplace. Validates all required assets, auto-generates `config.json` from the live API schema, and uploads the complete package via multipart REST API.
+Publish a brand-new SeamOS app to the SeamOS marketplace. Validates all required assets, auto-generates `config.json` from the live API schema, and uploads the complete package via multipart REST API.
 
 **Triggers:** `앱 업로드` · `upload app` · `publish app` · `앱 등록` · `deploy app`
 

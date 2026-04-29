@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# SDM Marketplace App Upload Script
+# SeamOS Marketplace App Upload Script
 # Uploads a SeamOS app package with metadata and assets via multipart/form-data
 
 usage() {
@@ -9,7 +9,7 @@ usage() {
 Usage: $(basename "$0") [OPTIONS]
 
 Required:
-  --base-url URL        SDM backend base URL (e.g., http://localhost:8088)
+  --base-url URL        SeamOS backend base URL (e.g., http://localhost:8088)
   --api-key KEY         API key with APP_DEPLOY scope
   --request JSON        App metadata as JSON string
   --main-image PATH     Path to main image file

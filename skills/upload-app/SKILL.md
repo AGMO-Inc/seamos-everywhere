@@ -1,19 +1,19 @@
 ---
 name: upload-app
-description: Upload a SeamOS app (.fif) to the SDM marketplace. Use this skill whenever the user wants to publish, upload, deploy, or register an app to the marketplace. Triggers on "앱 업로드", "앱 등록", "마켓플레이스에 올려", "upload app", "publish app", "deploy app", "앱 배포". Also use when the user has a .fif file and wants to get it onto the SDM marketplace, even if they don't say "upload" explicitly.
+description: Upload a SeamOS app (.fif) to the SeamOS marketplace. Use this skill whenever the user wants to publish, upload, deploy, or register an app to the marketplace. Triggers on "앱 업로드", "앱 등록", "마켓플레이스에 올려", "upload app", "publish app", "deploy app", "앱 배포". Also use when the user has a .fif file and wants to get it onto the SeamOS marketplace, even if they don't say "upload" explicitly.
 user-invocable: true
 allowed-tools: Read, Glob, Grep, Bash, Write, Edit
 argument-hint: "[--dry-run]"
 ---
 
-# Upload App to SDM Marketplace
+# Upload App to SeamOS Marketplace
 
-Upload a SeamOS app package (.fif) with metadata and assets to the SDM marketplace via REST API.
+Upload a SeamOS app package (.fif) with metadata and assets to the SeamOS marketplace via REST API.
 
 ## Prerequisites
 
 Before running this skill, the user's project must have:
-1. `.mcp.json` at project root with `sdm-marketplace` server configured (API key with APP_DEPLOY scope)
+1. `.mcp.json` at project root with `seamos-marketplace` server configured (API key with APP_DEPLOY scope)
 2. `seamos-assets/` directory at project root with the required files
 
 ## Asset Convention
@@ -43,12 +43,12 @@ Performance is critical — minimize user wait time and interaction rounds.
 Run these three operations simultaneously:
 
 **A. Get endpoint schema:**
-Call the `create_app` MCP tool (mcp__sdm-marketplace__create_app). This returns the REST endpoint schema with all required/optional parameters.
+Call the `create_app` MCP tool (mcp__seamos-marketplace__create_app). This returns the REST endpoint schema with all required/optional parameters.
 
 **B. Parse MCP config:**
 Read `.mcp.json` from the project root. Extract:
-- `url` from `mcpServers.sdm-marketplace.url` — strip the `/mcp` suffix to get the base URL (e.g., `http://localhost:8088`)
-- `X-API-Key` from `mcpServers.sdm-marketplace.headers.X-API-Key`
+- `url` from `mcpServers.seamos-marketplace.url` — strip the `/mcp` suffix to get the base URL (e.g., `http://localhost:8088`)
+- `X-API-Key` from `mcpServers.seamos-marketplace.headers.X-API-Key`
 
 **C. Scan asset directory:**
 Scan `seamos-assets/` and categorize found files:
@@ -63,7 +63,7 @@ Scan `seamos-assets/` and categorize found files:
 After all three complete, check for issues:
 
 **Hard stop:**
-- `.mcp.json` missing or no sdm-marketplace config → guide user to create it
+- `.mcp.json` missing or no seamos-marketplace config → guide user to create it
 
 **If `seamos-assets/` directory is missing** → auto-scaffold:
 1. Create directory structure: `seamos-assets/`, `seamos-assets/builds/`, `seamos-assets/screenshots/`
@@ -216,7 +216,7 @@ The `--request` JSON is built from config.json fields, mapped to the API schema 
 
 ## Important Notes
 
-For shared rules (API key masking, feuType matching, file path conventions), see `skills/shared-references/sdm-common-rules.md`.
+For shared rules (API key masking, feuType matching, file path conventions), see `skills/shared-references/seamos-common-rules.md`.
 
 **Upload-app specific rules:**
 - When generating the config template, use the MCP schema from `create_app` to ensure field names match the API exactly. The template must include ALL fields from the schema — both required and optional — with appropriate default values (empty string for strings, 0 for numbers, false for booleans, empty array for arrays). Users should see every available option upfront so they can fill in what they need without guessing what fields exist.

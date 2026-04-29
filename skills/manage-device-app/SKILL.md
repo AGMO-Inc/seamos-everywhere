@@ -1,6 +1,6 @@
 ---
 name: manage-device-app
-description: Manage apps on SeamOS devices — install, update, or uninstall apps via SDM MCP tools. Use this skill whenever the user wants to install an app on their device, update an installed app to the latest version, remove/uninstall an app from a device, check installed apps, or view their device list. Triggers on "디바이스에 앱 설치", "앱 설치해줘", "앱 업데이트", "앱 삭제", "앱 제거", "install app on device", "uninstall app", "update app on device", "내 디바이스", "설치된 앱", "device app manage". Also triggers when the user mentions a specific device and wants to do something with apps on it, even if they don't say "install" explicitly.
+description: Manage apps on SeamOS devices — install, update, or uninstall apps via SeamOS MCP tools. Use this skill whenever the user wants to install an app on their device, update an installed app to the latest version, remove/uninstall an app from a device, check installed apps, or view their device list. Triggers on "디바이스에 앱 설치", "앱 설치해줘", "앱 업데이트", "앱 삭제", "앱 제거", "install app on device", "uninstall app", "update app on device", "내 디바이스", "설치된 앱", "device app manage". Also triggers when the user mentions a specific device and wants to do something with apps on it, even if they don't say "install" explicitly.
 user-invocable: true
 allowed-tools: Read, Glob, Grep, Bash
 argument-hint: "[install|update|uninstall] [--device <id>] [--app <id>]"
@@ -8,7 +8,7 @@ argument-hint: "[install|update|uninstall] [--device <id>] [--app <id>]"
 
 # Manage Device Apps
 
-Install, update, or uninstall apps on SeamOS devices using the SDM local MCP server.
+Install, update, or uninstall apps on SeamOS devices using the SeamOS local MCP server.
 
 This skill is about managing apps **on physical devices** — it's different from `upload-app` (publishing a new app to the marketplace) and `update-app` (uploading a new version to the marketplace).
 
@@ -20,11 +20,11 @@ This skill is about managing apps **on physical devices** — it's different fro
 
 ## Prerequisites
 
-`.mcp.json` at project root with `sdm-marketplace-local` server configured.
+`.mcp.json` at project root with `seamos-marketplace-local` server configured.
 
 ## MCP Tools Used
 
-All tools are from the `sdm-marketplace-local` server:
+All tools are from the `seamos-marketplace-local` server:
 
 | Tool | Purpose |
 |---|---|
@@ -267,14 +267,14 @@ After any successful action (install, update, or uninstall), update `.seamos-con
 
 ## Error Handling
 
-- **MCP server unreachable**: "SDM 로컬 서버에 연결할 수 없습니다. `.mcp.json` 설정과 서버 상태를 확인해주세요."
+- **MCP server unreachable**: "SeamOS 로컬 서버에 연결할 수 없습니다. `.mcp.json` 설정과 서버 상태를 확인해주세요."
 - **No devices**: "등록된 디바이스가 없습니다."
 - **No apps**: "등록된 앱이 없습니다. 먼저 `upload-app` 스킬로 앱을 마켓플레이스에 등록해주세요."
 - **Install fails**: Show the error from the MCP response and suggest checking device connectivity.
 
 ## Important Notes
 
-- This skill uses `sdm-marketplace-local` MCP tools, not `sdm-marketplace`. The local server handles device-specific operations.
+- This skill uses `seamos-marketplace-local` MCP tools, not `seamos-marketplace`. The local server handles device-specific operations.
 - Always show device online/offline status so the user knows what to expect.
 - The `install_app_on_device` installs the **latest approved version** — there's no version selection for install.
 - When the user just wants to check status (devices, installed apps), respond directly without walking through the full install/update/uninstall flow.

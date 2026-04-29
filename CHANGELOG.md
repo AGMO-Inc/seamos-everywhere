@@ -2,6 +2,37 @@
 
 All notable changes to **seamos-everywhere** are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [SemVer](https://semver.org/) (pre-1.0: minor bumps signal feature additions, patch bumps signal fixes).
 
+## [0.7.0] — 2026-04-30
+
+브랜드 일관성을 위해 MCP 설정·스킬·문서 전반의 `sdm` / `SDM` 표기를 `seamos` / `SeamOS` 로 일괄 정리. 이는 **breaking change** 로, plugin userConfig 키와 MCP 서버 이름이 변경되어 기존 설치 사용자는 키를 다시 설정해야 한다.
+
+### Changed — Breaking
+
+- **MCP 서버명**: `sdm-marketplace` → `seamos-marketplace`, `sdm-marketplace-local` → `seamos-marketplace-local` (`mcp-servers.json`, `.mcp.json`).
+- **plugin userConfig 키**: `sdm_api_key` / `sdm_api_url` → `seamos_api_key` / `seamos_api_url` (`.claude-plugin/plugin.json`). 기존 사용자는 Claude Code 의 plugin 설정에서 새 키 이름으로 재입력 필요.
+- **MCP 도구 prefix**: 스킬 본문이 참조하던 `mcp__sdm-marketplace__*` 표기를 `mcp__seamos-marketplace__*` 로 갱신 (`upload-app`, `update-app`, `manage-device-app`).
+- **shared reference 파일명**: `skills/shared-references/sdm-common-rules.md` → `seamos-common-rules.md` (git mv 로 history 보존). 참조 2 건 (`upload-app`, `update-app` SKILL.md) 동기 갱신.
+
+### Changed — 문서·산문
+
+- `CLAUDE.md`, `README.md` 의 "SDM Marketplace" / "SDM MCP Server" / "sdm-backend" 등 표기를 SeamOS 계열로 통일. `AGMO SDM System` 프로젝트명도 `AGMO SeamOS System` 으로 정리.
+- 스킬 설명문·에러 메시지 (`SDM 로컬 서버에 연결할 수 없습니다` 등) 와 스크립트 헤더 (`SDM Marketplace App Upload Script` 등) 모두 SeamOS 로 갱신.
+- `concept/` 의 다이어그램·PPT 생성기 라벨 ("SDM MCP Server", "sdm-backend API") 도 일괄 갱신 (gitignored — 로컬 산출용).
+
+### Unchanged — 의도적 보존
+
+- `sdm_ak_***` 예시 prefix (`seamos-common-rules.md` §1): 백엔드가 실제 발급하는 API 키 포맷을 문서화한 것으로, 변경 시 사용자가 실제 키 형식에 대해 혼동. 백엔드 prefix 가 바뀌면 추후 동기화.
+- `.mcp.json` 의 실제 API 키 값 (`sdm_ak_*` prefixed): 외부 백엔드가 발급한 실 데이터.
+- `regen-sdk-app/` (SDK 약어), `BasdMac*` (ISO-11783 SPN 표준 필드명) — `sdm` 과 무관한 우연한 부분 일치.
+
+### Migration
+
+기존 v0.6.x 사용자는 다음을 수행:
+
+1. Claude Code plugin 설정에서 `sdm_api_key` / `sdm_api_url` 값을 복사해 새 키 `seamos_api_key` / `seamos_api_url` 로 재입력.
+2. 로컬 `.mcp.json` 의 서버 이름을 `seamos-marketplace` / `seamos-marketplace-local` 로 수정 (실제 키 값과 URL 은 그대로 유지).
+3. 외부에서 MCP 도구를 직접 참조하던 자동화 스크립트가 있다면 `mcp__sdm-marketplace__*` → `mcp__seamos-marketplace__*` 로 prefix 갱신.
+
 ## [0.6.0] — 2026-04-30
 
 신규 스킬 `edit-plugins` — 기존 SeamOS 프로젝트의 plugin / interface 집합을 안전하게 변경하고, **변경이 실제 앱에 반영되도록 FSP + SDK skeleton 재생성을 자동 chain**. v0.5.x 까지는 SSOT 직접 편집 → `create-project --regen-fsp-only` → `regen-sdk-app` 의 3 단계를 사용자가 수동으로 묶어야 했고, 중간 단계 누락 시 running 앱이 stale FSP 를 계속 사용하는 silent failure 가 발생. 본 스킬은 이 묶음을 단일 진입점으로 통합하고, 자동 백업·롤백·offlineDB 검증·Bosch FD limitation 사후 감지까지 일괄 제공.
