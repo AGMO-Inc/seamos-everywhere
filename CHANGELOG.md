@@ -2,6 +2,23 @@
 
 All notable changes to **seamos-everywhere** are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [SemVer](https://semver.org/) (pre-1.0: minor bumps signal feature additions, patch bumps signal fixes).
 
+## [0.5.9] — 2026-04-30
+
+v0.5.7 의 `update-app` SKILL.md `argument-hint` 가 광고하던 `--feu-type` / `--arch` 인자를 `update.sh` 도 직접 받도록 구현. 자동화 파이프라인이 인터랙티브 단계 없이 `update.sh` 를 직접 호출 가능 — 스킬 레이어 우회 경로 완성.
+
+### Added — `update.sh` 의 single-variant convenience 인자
+
+- `--feu-type FEU` — multipart part name (단일 variant 등록용).
+- `--fif PATH` — 명시적 `.fif` 경로.
+- `--arch ARCH` — `<ARCH>-*.fif` 패턴으로 BUILD_DIR 단일 매칭 자동 해석. 0 매칭 / 다중 매칭은 명시 에러 (자동 첫 번째 픽업 금지).
+- `--build-dir DIR` — `--arch` 해석 시 검색 루트 (기본 `./seamos-assets/builds`).
+- 본 4 개 인자는 기존 `--app-file TYPE PATH` 와 혼용 불가 — 하나의 호출은 한 vector 만 사용.
+- 본 변경 전에는 `update.sh` 가 `--app-file` 만 받아 자동화 파이프라인이 SKILL.md 의 인터랙티브 단계를 우회할 수 없었음 (`argument-hint` 와 `update.sh` 인자가 정합되지 않은 상태).
+
+### Added — `update-app/scripts/test/test-args.sh` 회귀 방지 테스트
+
+15 개 assertion: `--feu-type` + `--fif` 합성, `--arch` 단일 매칭 / 다중 / 0 매칭 분기, `--app-file` 와 mutual exclusion, `--feu-type` 단독 사용 시 에러, `--fif` / `--arch` 단독 사용 시 에러, legacy `--app-file` 경로 회귀 없음, `--dry-run` 의 API key 마스킹.
+
 ## [0.5.8] — 2026-04-30
 
 이전 두 패치(v0.5.6, v0.5.7) 의 후속 정리. CHANGELOG 의 v0.5.4 / v0.5.5 누락 엔트리 소급 보충, `disk_packaging_policy()` 의 dry-run 안전성을 구조적으로 분리, legacy 중복 cleanup 1 줄 제거. 사용자 코드 영향 없음.

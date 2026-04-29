@@ -115,7 +115,7 @@ If appId is not found → warn user and go back to selection.
 
 3. **ARCH 인식 실패 fallback**: ARCH 토큰 파싱이 실패한 경우 "ARCH 를 자동 인식하지 못했습니다. 어느 ARCH 와 feuType 에 등록할까요?" 라는 메시지로 ARCH 와 feuType 둘 다 직접 입력 받는다.
 
-4. **`--feu-type` 명시 인자**: 호출 시 `--feu-type` 옵션이 주어졌다면 본 fallback 블록 전체를 skip 하고 해당 값을 그대로 사용한다 (ARCH 도 `--arch` 인자 우선). 자동화 파이프라인 대응 경로.
+4. **`--feu-type` 명시 인자**: 호출 시 `--feu-type` 옵션이 주어졌다면 본 fallback 블록 전체를 skip 하고 해당 값을 그대로 사용한다 (ARCH 도 `--arch` 인자 우선). 자동화 파이프라인 대응 경로. 본 스킬 인자는 `update.sh` 의 동일 이름 인자(`--feu-type FEU` / `--arch ARCH`) 로 그대로 전달 가능 — 인터랙티브 단계 없이 호출하려면 `--feu-type FEU --fif PATH` 또는 `--feu-type FEU --arch ARCH` (BUILD_DIR 의 `<ARCH>-*.fif` 단일 매칭 자동 해석) 조합 사용.
 
 ### 3-0a. FeuType 캐시 흐름
 
@@ -271,6 +271,20 @@ bash skills/update-app/scripts/update.sh \
   --request '{variants_json}' \
   --app-file "{feuType}" "{fif_path}"
 ```
+
+자동화 파이프라인이 단일 variant 만 등록하는 경우 `--feu-type` + (`--fif` | `--arch`) 조합도 사용 가능 — 결과적으로 동일한 multipart 요청 생성:
+
+```bash
+bash skills/update-app/scripts/update.sh \
+  --base-url "{base_url}" \
+  --api-key "{api_key}" \
+  --app-id {appId} \
+  --request '{variants_json}' \
+  --feu-type "{feuType}" \
+  --arch "{arch}"   # 또는 --fif "{fif_path}"
+```
+
+`--feu-type` / `--fif` / `--arch` 는 `--app-file` 과 혼용 불가. `--arch` 만 주어지면 BUILD_DIR (기본 `./seamos-assets/builds`) 에서 `<ARCH>-*.fif` 단일 매칭을 찾아 사용 — 0 매칭 / 다중 매칭은 명시 에러.
 
 Do NOT build or display the curl command yourself — always use the script, which handles API key masking internally.
 
