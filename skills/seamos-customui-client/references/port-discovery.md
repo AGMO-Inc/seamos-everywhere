@@ -68,6 +68,31 @@ through the `/{featureId}/` reverse proxy.
 const wsUrl = `ws://${location.hostname}:${wsPort}/socket`
 ```
 
+## Building app REST URLs (same port as WS)
+
+REST routes registered on the app side via
+`UIWebServiceProvider::registerRoute("/crops", ...)` (C++) or
+`registerGetService("crops", ...)` (Java) are served on the **same**
+dynamically-assigned port as the WebSocket. The UI gateway (e.g. 6563)
+does **not** reverse-proxy them — calling them with a relative URL or with
+the gateway's port returns 404.
+
+```js
+const apiBase = `http://${location.hostname}:${wsPort}`
+
+// CORRECT — hits the app, which registered /crops
+await fetch(`${apiBase}/crops`)
+
+// WRONG — relative path resolves under the UI gateway prefix
+await fetch('crops')
+
+// WRONG — leading slash escapes the prefix but still hits the gateway, not the app
+await fetch('/crops')
+```
+
+So one round-trip to `get_assigned_ports` gives you the host:port for both
+WS frames *and* your REST endpoints. Cache it for the lifetime of the page.
+
 - `location.hostname` — never hardcode an IP. The UI bundle ships to every
   device and `location.hostname` is whatever the user typed in the browser.
 - `/socket` — the path the app's Java/C++ side registered with

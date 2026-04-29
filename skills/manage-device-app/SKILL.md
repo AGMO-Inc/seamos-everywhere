@@ -207,18 +207,25 @@ After confirmation, call the appropriate MCP tool:
 
 After the action is triggered, poll `get_task_status(deviceId, appId)` to track progress.
 
-Poll strategy:
+Poll strategy (bounded by an absolute wall-clock budget, not just attempt count):
 1. Wait 2 seconds, then call `get_task_status`
-2. If status is `RUNNING` or `PENDING` → report progress and poll again (up to 5 times, 3-second intervals)
+2. If status is `RUNNING` or `PENDING` → report progress and poll again every 3 seconds
 3. If status is `COMPLETED` → report success
 4. If status is `NOT_FOUND` → warn and suggest retrying
+5. **Hard timeout: 5 minutes total** (≈100 attempts at 3-second intervals). Stop polling once the budget is exhausted regardless of how many attempts have been made.
+
+> **Important — `task-status` is sometimes stuck on `RUNNING` even after the device finished.** A known marketplace-side bug leaves `get_task_status` reporting `RUNNING` indefinitely while the device has already completed the install/update/uninstall. Do **not** treat a stuck `RUNNING` as failure. If the timeout fires:
+> 1. Call `list_installed_apps(deviceId)` once and compare against the action:
+>    - **install/update**: the target appId should now appear (and for update, with the new version) — treat as success.
+>    - **uninstall**: the target appId should be **gone** — treat as success.
+> 2. Surface the discrepancy to the user with the device-side check as the source of truth, not the marketplace task-status.
 
 ```
 ## 작업 진행 중...
 
 상태: RUNNING ⏳
 
-(자동으로 상태를 확인하고 있습니다)
+(자동으로 상태를 확인하고 있습니다 — 최대 5분)
 ```
 
 When complete:
@@ -229,13 +236,27 @@ When complete:
 Test App이 디바이스 RV-C1000에 설치되었습니다.
 ```
 
-If polling times out (5 attempts without COMPLETED), inform the user:
+If polling hits the 5-minute timeout, run the device-side reconciliation above and report whichever outcome it shows:
 
 ```
-## 작업이 아직 진행 중입니다
+## task-status 가 갱신되지 않습니다 (마켓플레이스 알려진 이슈)
 
-작업이 완료되지 않았지만, 백그라운드에서 계속 진행됩니다.
-나중에 상태를 확인하려면 "작업 상태 확인해줘"라고 말씀해주세요.
+5분 동안 task-status 가 RUNNING 으로 머물러 있어, 디바이스에서 직접 확인했습니다:
+
+- list_installed_apps 결과: Test App 1.1.0 ← **새 버전이 설치됨**
+- 따라서 작업은 사실상 성공했습니다.
+
+마켓플레이스의 task-status 갱신은 백엔드 이슈로 보이며, 디바이스 동작과 무관합니다.
+다시 확인하려면 "설치된 앱 확인해줘"라고 말씀해주세요.
+```
+
+If the device check is also inconclusive (target app not present after install, or still present after uninstall), then the action genuinely did not complete:
+
+```
+## 작업이 완료되지 않았을 수 있습니다
+
+5분 폴링 후에도 task-status 가 RUNNING 이고, 디바이스에서도 변경이 확인되지 않았습니다.
+잠시 후 "설치된 앱 확인해줘"로 다시 점검하거나, 디바이스 네트워크 상태를 확인해주세요.
 ```
 
 ### Cache Update

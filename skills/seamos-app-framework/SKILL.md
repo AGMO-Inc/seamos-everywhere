@@ -62,4 +62,10 @@ Read the pattern file and find the `##` section matching the selected pattern. A
 - DB Persistence uses a dual-path architecture due to NEVONEX runc container ephemeral filesystem. The `saveToDisk(file, true)` API copies DB to a host-mounted path that survives container restarts. **overwrite parameter must be `true`.**
 - Java H2 requires `WRITE_DELAY=0` to ensure data is flushed before `saveToDisk`.
 - C++ FileProvider `overwrite` defaults to `false` — always pass `true` explicitly.
+- C++ specifics that bite first-time authors (all in `references/usage-patterns/cpp.md`):
+  - **Namespace:** `nevonex::resource::FileProvider` — there is no `::fcal::` segment despite the package being `nevonex-fcal-platform`.
+  - **Boost 1.73 compat:** the SDK ships Boost 1.73; use `remove(dst); copy_file(src, dst);` instead of `copy_options::overwrite_existing` (1.74+ only).
+  - **Poco `use(T&)`:** parameters bound with `Poco::Data::use(...)` must be **non-const** lvalues — `const T&` triggers a static_assert. Take by value or copy into a local before binding.
+  - **CMake link:** `find_package(Poco REQUIRED COMPONENTS Data DataSQLite)` + `target_link_libraries(... Poco::Data Poco::DataSQLite)` in the **project-root `CMakeLists.txt`** (preserved across `regen-sdk-app`), not in any file under `<APP>_CPP_SDK/` (regenerated).
 - REST/WebSocket patterns are NEVONEX-specific (NevonexRoute, UIWebServiceProvider). Standard HTTP frameworks do not apply.
+- **REST routes registered with `registerRoute("/path", ...)` are served on the app's WS port (default 1456 in `--via-fd-cli`), not the UI gateway port (6563).** The browser must call them through the `get_assigned_ports`-derived base URL — see `seamos-customui-client` for the client-side pattern.

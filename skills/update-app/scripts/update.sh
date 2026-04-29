@@ -78,16 +78,46 @@ if $DRY_RUN; then
   exit 0
 fi
 
-# Execute
-OUTPUT=$("${CURL_ARGS[@]}")
-HTTP_CODE=$(echo "$OUTPUT" | tail -1)
-BODY=$(echo "$OUTPUT" | sed '$d')
+# Execute with one-shot retry on transient backend errors.
+# The SDM backend occasionally responds with "Could not open JPA EntityManager
+# for transaction" (HTTP 500) on the first call after a cold start. A single
+# retry after a short sleep clears it. We only retry on 5xx — never on 4xx,
+# which is a real client-side problem the user should see immediately.
+run_curl() {
+  local out
+  out=$("${CURL_ARGS[@]}")
+  echo "$out"
+}
+
+ATTEMPT=1
+MAX_ATTEMPTS=2
+while :; do
+  OUTPUT=$(run_curl)
+  HTTP_CODE=$(echo "$OUTPUT" | tail -1)
+  BODY=$(echo "$OUTPUT" | sed '$d')
+
+  if [[ "$HTTP_CODE" -ge 200 && "$HTTP_CODE" -lt 300 ]]; then
+    break
+  fi
+
+  # Retry only on 5xx or transient JPA-shaped bodies; only once.
+  if [[ $ATTEMPT -lt $MAX_ATTEMPTS ]] \
+     && { [[ "$HTTP_CODE" -ge 500 && "$HTTP_CODE" -lt 600 ]] \
+          || echo "$BODY" | grep -qiE 'JPA EntityManager|EntityManagerFactory|transaction'; }; then
+    echo "--- Transient backend error (HTTP ${HTTP_CODE}); retrying once after 2s ---" >&2
+    ATTEMPT=$((ATTEMPT + 1))
+    sleep 2
+    continue
+  fi
+
+  break
+done
 
 echo "$BODY"
 if [[ "$HTTP_CODE" -ge 200 && "$HTTP_CODE" -lt 300 ]]; then
   echo "--- Status: ${HTTP_CODE} (Success) ---"
   exit 0
 else
-  echo "--- Status: ${HTTP_CODE} (Failed) ---"
+  echo "--- Status: ${HTTP_CODE} (Failed after ${ATTEMPT} attempt(s)) ---"
   exit 1
 fi

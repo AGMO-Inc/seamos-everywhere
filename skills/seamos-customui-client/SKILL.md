@@ -40,6 +40,55 @@ every first-time author:
 Once you have the external port, the WebSocket goes straight to it —
 `ws://${location.hostname}:${wsPort}/socket` — bypassing the reverse proxy.
 
+### REST routes use the same port — the UI gateway does NOT proxy them
+
+This is the second surprise, and it's not obvious from the WS-focused docs.
+The UI gateway (port 6563 in `--via-fd-cli`) only serves **static UI assets +
+the `get_assigned_ports` endpoint**. Anything you registered on the C++/Java
+side with `registerRoute("/crops", ...)` / `registerGetService("crops", ...)`
+lives on the **same dynamically-assigned port as the WebSocket** (1456
+internally, whatever `get_assigned_ports` returns externally).
+
+```js
+// WRONG — hits the UI gateway, which doesn't know about /crops → 404
+const res = await fetch('crops')
+
+// WRONG — for the same reason: relative-to-UI-gateway, not the app port
+const res = await fetch('/crops')
+
+// CORRECT — same base the WebSocket uses
+const apiBase = `http://${location.hostname}:${wsPort}`
+const res = await fetch(`${apiBase}/crops`)
+```
+
+A tiny helper keeps the rest of the UI honest:
+
+```js
+let API_BASE = null
+
+async function ensureApiBase() {
+  if (API_BASE) return API_BASE
+  const res = await fetch('get_assigned_ports', { cache: 'no-store' })
+  const ports = await res.json()
+  const raw = Object.values(ports)[0]
+  const port = typeof raw === 'number' ? raw : Number.parseInt(String(raw), 10)
+  if (!Number.isFinite(port)) throw new Error('bad get_assigned_ports')
+  API_BASE = `http://${location.hostname}:${port}`
+  return API_BASE
+}
+
+async function api(path, init) {
+  const base = await ensureApiBase()
+  return fetch(`${base}${path}`, init)  // path = '/crops', '/work-logs', ...
+}
+
+// Usage everywhere: const res = await api('/crops')
+```
+
+The same `port` value is what you build the `ws://...:${port}/socket` URL
+from — there is exactly one app port per feature instance, shared by REST
+and WebSocket.
+
 ## Workflow
 
 1. **Discover the port** — `references/port-discovery.md`. Always relative
@@ -61,12 +110,16 @@ Once you have the external port, the WebSocket goes straight to it —
 | First-time CustomUI scaffold | port-discovery.md → ws-protocol.md → full-example.html |
 | "Show topic X live in the UI" | ws-protocol.md (incoming `topic` shape) |
 | "Add a button that toggles interface Y" | ws-protocol.md (outgoing `publish`) |
+| "UI needs to call my own REST endpoint (`/crops`, etc.)" | "REST routes use the same port" section above |
 | "UI needs to hit marketplace / cloud API" | cloud-proxy.md |
-| "Why does my fetch get 404?" | port-discovery.md (relative URL gotcha) |
+| "Why does my fetch get 404?" | port-discovery.md (relative URL gotcha for `get_assigned_ports`); same-port section above (for app-defined REST routes) |
 
 ## Hard rules
 
 - **Relative URL for `get_assigned_ports`.** Never `/get_assigned_ports`.
+- **App-defined REST routes go through the assigned port, not the UI gateway.**
+  `${location.hostname}:${wsPort}/crops`, never `/crops` or `crops` alone.
+  The UI gateway (6563) only serves static assets + `get_assigned_ports`.
 - **Coerce port to number.** The map's value is typically a string
   (`{"1456": "59449"}`). Use `Number.parseInt(String(raw), 10)` and validate
   with `Number.isFinite`.

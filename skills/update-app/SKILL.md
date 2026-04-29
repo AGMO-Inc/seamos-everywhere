@@ -100,10 +100,24 @@ If `organizationApps` is empty, skip the "조직 앱" section entirely and only 
 #### 2-2. Fetch App Status
 
 Once the appId is determined, immediately call `get_app_status` MCP tool (`mcp__sdm-marketplace__get_app_status`) with the selected appId. Extract:
-- Current version number(s) per feuType
-- List of registered feuTypes for this app
+- Current version number(s) per feuType *(if available — see fallback below)*
+- List of registered feuTypes for this app *(if available — see fallback below)*
 
 If appId is not found → warn user and go back to selection.
+
+**Fallback when `get_app_status` does not include feuType info:**
+The current backend response only returns a `versions` array — it does **not** carry a `feuType` field per version, so step 3-1 cannot show "현재 등록된 기기 타입" from this call alone. Detect this case and fall back gracefully:
+
+1. After parsing the response, check whether any version entry exposes a `feuType` (or equivalent) field.
+2. If **none** do, treat the registered-feuType list as **unknown** and skip the "이 앱에 등록된 기기 타입" subsection in step 3-1. Show only the .fif files found in `seamos-assets/builds/` and ask the user to either pick one of those filenames or type the feuType directly:
+   ```
+   현재 백엔드 응답에는 등록된 기기 타입 정보가 포함되어 있지 않습니다.
+   builds/ 폴더에서 발견한 파일을 기준으로 선택하거나 직접 입력해주세요:
+   1. AUTO-IT_RV-C1000.fif → feuType: AUTO-IT_RV-C1000
+   2. RCU4-3Q-20.fif       → feuType: RCU4-3Q/20  (파일명의 `-` 는 보통 `/` 로 환원되니 확인 필요)
+   직접 입력하려면 feuType 문자열을 그대로 적어주세요.
+   ```
+3. The same fallback applies to the **current version** lookup in step 3-2 — if the response does not include a per-feuType current version, ask the user for the version directly without an auto-suggested next-patch.
 
 This data is used in the next step for feuType selection and version suggestion.
 
@@ -249,12 +263,15 @@ Do NOT build or display the curl command yourself — always use the script, whi
 ### Step 6: Report Result
 
 - **Success (2xx)**: Show response, confirm version was uploaded. Suggest running `get_app_status` to verify deployment status.
+- **Transient backend error (5xx, JPA, "Could not open EntityManager"): retry once automatically.**
+  The script (`update.sh`) already retries `5xx` and JPA-shaped error bodies once after a 2-second sleep before reporting failure. If the second attempt also fails, surface the original status code to the user with the guidance below.
+  Observed in practice: a fresh `update_app_on_device` / `versions` POST occasionally returns `Could not open JPA EntityManager for transaction` on first call right after the backend boots, then succeeds on retry. Do not surface the first transient as an error to the user — only the final outcome.
 - **Failure**: Show HTTP status + response body with fix suggestions:
   - 401: API key invalid or missing APP_DEPLOY scope
   - 403: Not the app owner (no WRITE permission)
   - 400: Missing required field or invalid version format
   - 404: App ID not found
-  - 5xx: Server issue, suggest retrying
+  - 5xx (after retry): Server issue still persisting, suggest waiting and retrying manually
 
 ### Cache Update
 

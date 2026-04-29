@@ -41,6 +41,18 @@ Launch a SeamOS app (CPP or Java codegen-type) inside the app-builder Docker con
 
 Invoke the wrapper script with flags (또는 env 변수). `--app-name` flag 와 `APP_NAME` env 는 모두 지원됩니다.
 
+> **외부 프로젝트 (USER_ROOT 밖) 실행 시 — 가장 자주 빠지는 함정.**
+> `run-app.sh` 는 기본적으로 플러그인 트리(`USER_ROOT`) 안의 프로젝트를 찾습니다.
+> 다른 디렉터리(예: `~/work/MyApp/MyApp`)에서 작업 중이라면 매 호출마다
+> `APP_PROJECT_ROOT=...` env 를 명시해야 합니다 — 그렇지 않으면 "project not found"
+> 또는 잘못된 워크스페이스를 mount 합니다.
+> ```bash
+> APP_PROJECT_ROOT="$HOME/work/MyApp/MyApp" bash scripts/run-app.sh --app-name MyApp
+> APP_PROJECT_ROOT="$HOME/work/MyApp/MyApp" bash scripts/run-app.sh --via-fd-cli --app-name MyApp
+> ```
+> `--via-fd-cli` 도 동일합니다. 아래 Quick examples 는 플러그인 내부 케이스이므로
+> 외부 프로젝트면 모든 예시 앞에 `APP_PROJECT_ROOT=...` 를 붙여서 읽으세요.
+
 Example — env 변수로 `SampleImu2` 실행 (기본 포트, loopback):
 
 ```bash
@@ -91,10 +103,23 @@ RUNAPP_PLATFORM=linux/arm64 bash scripts/run-app.sh --app-name SampleImu2
 
 `fd-cli` 이미지 (`public.ecr.aws/g0j5z0m9/fd-cli:stable`) 는 같은 Bosch FD 빌드 trunk 의 산출물로, **`/workspace/.nevonex/dependencies/<ver>/lib/`** 에 Platform Service shared lib 가 baked-in 되어 있다. `--via-fd-cli` 는 이 이미지로 build → run → test (TestSimulator) 를 위임해서 `--diagnose` 의 layer 4 까지 PASS 하도록 한다.
 
+> **포트 토폴로지 — 처음 보면 무조건 헷갈리는 부분.** `--via-fd-cli` 모드는 컨테이너에서 **두 개의 서로 다른 서버**가 동시에 뜬다:
+>
+> | Port | 서버 | 용도 |
+> |------|------|------|
+> | `:6563` | **Java UI gateway** (Spark/Jetty) | CustomUI 정적 파일 + `get_assigned_ports` 만 서빙. 우리 REST 라우트는 **프록시하지 않음**. |
+> | `:1456` | **cpp_app** (NEVONEX) | `registerRoute("/crops", ...)` 로 등록한 모든 REST + `/socket` WebSocket 이 여기에 있음. |
+>
+> 브라우저 UI 에서 `fetch('/crops')` → `:6563` 으로 가서 404 가 나오는 게 가장 흔한 실수. UI 는 반드시 `get_assigned_ports` 로 **외부 매핑된 1456 포트**를 받은 뒤 `http://${host}:${wsPort}/crops` 로 호출해야 한다 (`seamos-customui-client` 참조). `--diagnose` 는 layer 5 에서만 6563 을 검사하고, layer 3/4 (REST/WS) 는 1456 만 본다.
+
 ```bash
 bash scripts/run-app.sh --via-fd-cli --app-name SampleImu2
 # 다른 터미널 / 같은 셸 후속:
 bash scripts/run-app.sh --diagnose
+
+# 외부 프로젝트의 경우 (가장 자주 빠지는 함정):
+APP_PROJECT_ROOT="$HOME/work/MyApp/MyApp" \
+  bash scripts/run-app.sh --via-fd-cli --app-name MyApp
 ```
 
 | Flag | Default | 설명 |
