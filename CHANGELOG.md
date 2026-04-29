@@ -2,6 +2,38 @@
 
 All notable changes to **seamos-everywhere** are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [SemVer](https://semver.org/) (pre-1.0: minor bumps signal feature additions, patch bumps signal fixes).
 
+## [0.5.6] — 2026-04-30
+
+`build-fif` 의 disk 무차별 패키징 결함을 잡고, 빌드/regen/runtime 의 3 경로 정책(`./db/` working / `disk/<feature>/` persistent / `disk/seed/` allowlist) 을 6 개 문서에 일관 명시. `update-app` 측 fallback 휴리스틱 제거를 위한 `last_app_register` 캐시 스키마 신설(`update-app` 본 동작 변경은 v0.5.7 에서 따라옴).
+
+### Fixed — `build-fif` 매 버전 업데이트마다 디바이스 DB 가 빌드 시점 snapshot 으로 롤백
+
+build-fif.sh 의 cleanup 단계가 사용자 워크스페이스의 `disk/` 디렉토리(개발 중 쌓인 H2/SQLite 운영 데이터 포함)를 통째로 FIF 에 패키징해 디바이스에 배포되던 회귀. Java cleanup 분기는 `*.mv.db` 정도만 부분 제거했고 C++ 분기에는 대응 코드가 전무했음. 결과적으로 새 버전을 올릴 때마다 디바이스 운영 DB 가 빌드 시점 사본으로 강제 롤백되며, 시드 데이터와 우연한 dev 데이터를 구별할 방법이 없었음.
+
+- `disk_packaging_policy()` 함수 신설 — `disk/seed/` 만 allowlist 로 보존, 그 외 `disk/**` 는 빌드 임시 사본에서 제거. apply/dry-run 양쪽 지원, bash 3.2 호환, `set -e` 친화적.
+- Java/C++ cleanup 분기 양쪽에서 빌드 임시 사본 경로(`/tmp/nvx/app_proj/$(basename "$APP_PATH")`) 에 대해 호출. 사용자 원본 워크스페이스는 절대 건드리지 않음.
+- DRY-RUN 출력에 `APP_TYPE`/`APP_PATH`/`SDK_PATH`/`DISK_POLICY`/`DISK_SCAN_RESULT` 5 필드 추가 — 빌드 전에 어떤 파일이 제외/보존되는지 사전 확인 가능.
+- 산출물 캡처를 `cp ... 2>/dev/null` + `ls *.fif | head -1` 침묵 패턴에서 명시 배열 + 0 개 검출 시 `No FIF artifact produced` 에러 + 다중 FIF 모두 보고로 교체.
+
+### Added — 3 경로 정책 6 개 문서에 일관 명시
+
+`./db/` (working DB, gitignored) / `disk/<feature>/...` (persistent, 디바이스 측 생성) / `disk/seed/...` (allowlist, 빌드 시 포함, 첫 부팅 시 디바이스로 복사) 세 경로의 책임 분리를 다음 6 개 파일에 일관 명시:
+
+- `build-fif/SKILL.md` — Disk packaging policy 섹션 신설
+- `build-fif/references/build-details.md` — Disk Packaging Policy 섹션 + 표 + 디렉토리 트리 예시
+- `seamos-app-framework/SKILL.md` — Notes 에 DB path conventions 표
+- `seamos-app-framework/references/usage-patterns/java.md` — DB Persistence 헤더 직후 단락 prepend (H2 기준)
+- `seamos-app-framework/references/usage-patterns/cpp.md` — DB Persistence 헤더 직후 단락 prepend (SQLite 기준)
+- `regen-sdk-app/SKILL.md` — 보존 정책 표에 `disk/` 행 추가 (regen 은 보존 / build-fif 는 disk/seed/ 만 패키징)
+
+### Added — `last_app_register` 캐시 스키마
+
+`shared-references/seamos-context-cache.md` 에 `update-app` 의 마지막 등록 컨텍스트(`feuType`/`arch`/`appId`/`updatedAt`) 를 캐시하는 영역 신설. `update-app` 본 동작 변경(fallback 휴리스틱 제거) 은 v0.5.7 에서 따라옴.
+
+### Added — 회귀 방지 테스트
+
+- `build-fif/scripts/test/test-disk-policy.sh` — 5 개 assertion: apply mode stdout 포맷, `disk/seed/` 만 보존 검증, dry-run 포맷, dry-run 비파괴성, `disk/` 부재 시 안내 메시지.
+
 ## [0.5.3] — 2026-04-28
 
 `run-app --via-fd-cli` 와 `regen-sdk-app` 의 실전 사용 중 드러난 6종 버그/제약을 한 번에 수정. 모두 코드 변경 없이 스킬 측에서 흡수 가능한 케이스라 패치 버전 bump.

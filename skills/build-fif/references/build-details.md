@@ -170,3 +170,33 @@ docker exec $CONTAINER /usr/share/build.sh \
 |---|---|---|
 | `FIF file not found` | build.sh failed | Check Docker logs: `docker logs nvx-fif-gen-cntr` |
 | Empty output directory | Container internal error | Inspect: `docker exec nvx-fif-gen-cntr ls /fif_output/` |
+
+## Disk Packaging Policy
+
+빌드 시 앱 폴더 내 디스크 관련 디렉토리는 다음 정책으로 처리된다.
+
+| 디렉토리 | 의미 | 빌드 패키징 | 런타임/regen |
+|---|---|---|---|
+| `./db/` | 빌드/런 시 작업 DB (working copy, gitignored) | 제외 | 런타임에 생성, regen 시 보존 |
+| `disk/<feature>/...` | 디바이스 영속 영역 (persistent) | **제외** | 디바이스에서 생성/유지 |
+| `disk/seed/...` | 앱이 의도적으로 동봉하는 시드 데이터 | **포함 (allowlist)** | 첫 부팅 시 디바이스로 복사 |
+
+매칭 규칙은 단순 디렉토리 prefix — `disk/seed/**` 글롭이 패키징되고 그 외 `disk/**` 는 빌드 임시 사본에서 제거된다. 사용자의 원본 워크스페이스 `disk/` 는 절대 변경되지 않는다.
+
+예시 디렉토리 트리:
+
+```
+<workspace>/<app>/
+├── db/
+│   └── working.h2.mv.db          ← 제외 (working DB)
+├── disk/
+│   ├── seed/
+│   │   └── init.json             ← 포함 (allowlist)
+│   ├── cache/
+│   │   └── foo.bin               ← 제외 (런타임 캐시)
+│   └── persistence/
+│       └── runtime.db            ← 제외 (디바이스 영속 영역)
+└── ...
+```
+
+DRY-RUN 모드 (`build-fif.sh --dry-run`) 출력의 `DISK_SCAN_RESULT` 라인에서 실제 빌드 시 어떤 파일들이 제외/보존되는지 사전에 확인할 수 있다 — `disk/seed/` 하위만 `INCLUDE` 로, 나머지 `disk/**` 는 `EXCLUDE` 로 표시된다.

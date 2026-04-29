@@ -69,3 +69,10 @@ Read the pattern file and find the `##` section matching the selected pattern. A
   - **CMake link:** `find_package(Poco REQUIRED COMPONENTS Data DataSQLite)` + `target_link_libraries(... Poco::Data Poco::DataSQLite)` in the **project-root `CMakeLists.txt`** (preserved across `regen-sdk-app`), not in any file under `<APP>_CPP_SDK/` (regenerated).
 - REST/WebSocket patterns are NEVONEX-specific (NevonexRoute, UIWebServiceProvider). Standard HTTP frameworks do not apply.
 - **REST routes registered with `registerRoute("/path", ...)` are served on the app's WS port (default 1456 in `--via-fd-cli`), not the UI gateway port (6563).** The browser must call them through the `get_assigned_ports`-derived base URL — see `seamos-customui-client` for the client-side pattern.
+- **DB path conventions**:
+
+  | 경로 | 의미 | 빌드 시 | 런타임 |
+  |---|---|---|---|
+  | `./db/` | 작업 DB (working copy, gitignored) | 제외 | 런타임 생성 |
+  | `disk/<feature>/...` | 디바이스 영속 영역 (persistent) | 제외 | 디바이스에서 생성/유지 |
+  | `disk/seed/...` | 앱이 동봉하는 시드 데이터 | **포함 (allowlist)** | 첫 부팅 시 복사 |
