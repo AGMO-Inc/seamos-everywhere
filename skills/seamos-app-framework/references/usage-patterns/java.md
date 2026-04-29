@@ -98,6 +98,8 @@ UIWebServiceProvider.getInstance().openWebsocket("/socket", UIWebsocketEndPoint.
 
 ## DB Persistence
 
+Java H2 의 working DB 는 `./db/<name>.h2.mv.db` 에 두며 빌드 시 제외된다. 디바이스 영속 DB 는 `disk/<feature>/persist.h2.mv.db` 와 같이 `disk/<feature>/...` 하위에 위치하며 디바이스 측에서 런타임에 생성/유지한다 — 빌드 산출물(FIF) 에 포함되지 않는다. 앱이 의도적으로 동봉하는 시드 데이터(예: 초기 카탈로그 SQL/JSON) 는 `disk/seed/...` 하위에 두면 allowlist 정책으로 패키징되어 첫 부팅 시 디바이스로 복사된다.
+
 > **Note:** NEVONEX apps run in runc containers with ephemeral filesystems. App updates destroy all container-internal files. Use `FCALFileProvider` to persist DB files to a host-mounted path that survives container restarts.
 
 **Architecture:**

@@ -98,6 +98,69 @@ resolve_project_name() {
   return 64
 }
 
+# disk_packaging_policy — apply disk/ allowlist (keep only disk/seed/) on a build workspace copy.
+# Usage:
+#   disk_packaging_policy <APP_PATH>             # apply (rm files outside disk/seed/)
+#   disk_packaging_policy --dry-run <APP_PATH>   # count only, no deletion
+#
+# Caller MUST pass the build temp workspace copy — never the user's source workspace.
+# Always returns 0 (safe under set -e).
+disk_packaging_policy() {
+  local dry_run=0
+  if [[ "${1:-}" == "--dry-run" ]]; then
+    dry_run=1
+    shift
+  fi
+  local app_path="${1:-}"
+  local disk_dir="$app_path/disk"
+
+  if [[ ! -d "$disk_dir" ]]; then
+    echo "(no disk/ directory)"
+    return 0
+  fi
+
+  local excluded=0
+  local retained=0
+  local f
+
+  # Count + (optionally) delete files outside disk/seed/
+  while IFS= read -r f; do
+    [[ -z "$f" ]] && continue
+    excluded=$((excluded + 1))
+    if [[ $dry_run -eq 0 ]]; then
+      rm -f "$f"
+    fi
+  done < <(find "$disk_dir" -type f -not -path "$disk_dir/seed/*" 2>/dev/null)
+
+  # Count files retained under disk/seed/
+  if [[ -d "$disk_dir/seed" ]]; then
+    while IFS= read -r f; do
+      [[ -z "$f" ]] && continue
+      retained=$((retained + 1))
+    done < <(find "$disk_dir/seed" -type f 2>/dev/null)
+  fi
+
+  # Remove now-empty directories outside disk/seed/ (apply mode only)
+  if [[ $dry_run -eq 0 ]]; then
+    while IFS= read -r d; do
+      [[ -z "$d" ]] && continue
+      [[ "$d" == "$disk_dir" ]] && continue
+      [[ "$d" == "$disk_dir/seed" ]] && continue
+      case "$d" in
+        "$disk_dir/seed"/*) continue ;;
+      esac
+      rm -rf "$d"
+    done < <(find "$disk_dir" -mindepth 1 -type d -not -path "$disk_dir/seed" -not -path "$disk_dir/seed/*" 2>/dev/null)
+  fi
+
+  if [[ $dry_run -eq 1 ]]; then
+    echo "would exclude $excluded files from disk/, would retain $retained files in disk/seed/"
+  else
+    echo "Excluded $excluded files from disk/, retained $retained files in disk/seed/"
+  fi
+  return 0
+}
+
 # ─── Parse args ─────────────────────────────────────────────────────────────
 POSITIONAL_USER_ROOT=""
 PROJECT_NAME_FLAG=""
@@ -183,20 +246,6 @@ NVX_DOCKER_IMAGE="${NVX_DOCKER_IMAGE:-public.ecr.aws/g0j5z0m9/seamos/app-builder
 NVX_VERSION="${NVX_DOCKER_IMAGE##*:}"
 ARCH_TYPE="${ARCH_TYPE:-aarch64}"
 BUILD_DIR="$USER_ROOT/seamos-assets/builds"
-
-# ─── Dry-run output (v4 CIMP-4: expose key paths) ──────────────────────────
-if [[ $DRY_RUN -eq 1 ]]; then
-  echo "[dry-run] USER_ROOT=$USER_ROOT"
-  echo "[dry-run] PROJECT_NAME=$PROJECT_NAME"
-  echo "[dry-run] FEATURE_NAME=$FEATURE_NAME"
-  echo "[dry-run] FD_APP_ROOT=$FD_APP_ROOT"
-  echo "[dry-run] FSP_PATH=$FSP_PATH"
-  echo "[dry-run] BUILD_DIR=$BUILD_DIR"
-  echo "[dry-run] CONTEXT_FILE=$USER_ROOT/.seamos-context.json"
-  echo "[dry-run] NVX_DOCKER_IMAGE=$NVX_DOCKER_IMAGE"
-  echo "[dry-run] ARCH_TYPE=$ARCH_TYPE"
-  exit 0
-fi
 
 cd "$PROJ_ROOT"
 
@@ -354,6 +403,25 @@ else
     fi
 fi
 
+# ─── Dry-run output (v4 CIMP-4: expose key paths) ──────────────────────────
+if [[ $DRY_RUN -eq 1 ]]; then
+  echo "[dry-run] USER_ROOT=$USER_ROOT"
+  echo "[dry-run] PROJECT_NAME=$PROJECT_NAME"
+  echo "[dry-run] FEATURE_NAME=$FEATURE_NAME"
+  echo "[dry-run] FD_APP_ROOT=$FD_APP_ROOT"
+  echo "[dry-run] FSP_PATH=$FSP_PATH"
+  echo "[dry-run] BUILD_DIR=$BUILD_DIR"
+  echo "[dry-run] CONTEXT_FILE=$USER_ROOT/.seamos-context.json"
+  echo "[dry-run] NVX_DOCKER_IMAGE=$NVX_DOCKER_IMAGE"
+  echo "[dry-run] ARCH_TYPE=$ARCH_TYPE"
+  echo "[dry-run] APP_TYPE: $APP_TYPE"
+  echo "[dry-run] APP_PATH: $APP_PATH"
+  echo "[dry-run] SDK_PATH: $SDK_PATH"
+  echo "[dry-run] DISK_POLICY: will exclude disk/* except disk/seed/"
+  echo "[dry-run] DISK_SCAN_RESULT: $(disk_packaging_policy --dry-run "$APP_PATH")"
+  exit 0
+fi
+
 echo "[2/7] Project validated"
 echo "  Feature: $FEATURE_NAME"
 echo "  Type: $APP_TYPE"
@@ -434,6 +502,7 @@ if [ "$APP_TYPE" = "java" ]; then
     rm -rf "/tmp/nvx/app_proj/$(basename "$APP_PATH")/target"
     # Exclude DB files from FIF package
     rm -f /tmp/nvx/app_proj/*/disk/*.mv.db /tmp/nvx/app_proj/*/disk/*.trace.db /tmp/nvx/app_proj/*/disk/*.mv.db.backup_*
+    [ -n "$APP_PATH" ] && disk_packaging_policy "/tmp/nvx/app_proj/$(basename "$APP_PATH")"
     cp "$JAR_FILE" /tmp/nvx/java_app_jar/
 else
     mkdir -p /tmp/nvx/{fsp_proj,app_proj,sdk_proj}
@@ -455,6 +524,7 @@ else
     if [ "$SDK_EXTRACTED" = "1" ]; then
         rm -rf "$SDK_PATH"
     fi
+    [ -n "$APP_PATH" ] && disk_packaging_policy "/tmp/nvx/app_proj/$(basename "$APP_PATH")"
 fi
 
 echo "[5/7] Build files ready"
@@ -496,9 +566,24 @@ docker cp "$CONTAINER":/fif_output /tmp/nvx/fif_output
 
 # Copy .fif files to $BUILD_DIR for skill chaining (upload-app, update-app)
 mkdir -p "$BUILD_DIR"
-cp /tmp/nvx/fif_output/*.fif "$BUILD_DIR/" 2>/dev/null
+BUILD_DIR_FIFS=()
+while IFS= read -r -d '' src; do
+  cp "$src" "$BUILD_DIR/"
+  BUILD_DIR_FIFS+=("$BUILD_DIR/$(basename "$src")")
+done < <(find /tmp/nvx/fif_output -maxdepth 1 -name '*.fif' -type f -print0 | sort -z)
 
-FIF_FILE=$(ls "$BUILD_DIR"/*.fif 2>/dev/null | head -1)
+if [[ ${#BUILD_DIR_FIFS[@]} -eq 0 ]]; then
+  echo "No FIF artifact produced" >&2
+  exit 1
+fi
+
+echo "Built FIF artifacts (${#BUILD_DIR_FIFS[@]}):"
+for f in "${BUILD_DIR_FIFS[@]}"; do
+  echo "  - $f"
+done
+PRIMARY_FIF="${BUILD_DIR_FIFS[0]}"
+FIF_FILE="$PRIMARY_FIF"
+
 if [ -n "$FIF_FILE" ]; then
     FIF_SIZE=$(du -h "$FIF_FILE" | cut -f1)
     echo ""

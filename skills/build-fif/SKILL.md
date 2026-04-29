@@ -21,3 +21,7 @@ The first positional argument is **USER_ROOT** (directory containing `.mcp.json`
 Map user arguments to env vars before the command: `APP_TYPE=cpp|java`, `ARCH_TYPE=aarch64|arm32|x86_64`, `NVX_DOCKER_IMAGE=<url>`. `--project-name <NAME>` flag disambiguates when multiple FSP projects live under a single USER_ROOT.
 
 Output: `$USER_ROOT/seamos-assets/builds/*.fif` — consumed directly by the upload-app skill. On error, read [build-details.md](references/build-details.md) for troubleshooting.
+
+## Disk packaging policy
+
+`disk/` 하위는 기본적으로 패키징에서 제외된다. 단 `disk/seed/` 하위는 allowlist 로 그대로 패키징된다 — 앱이 의도적으로 동봉하는 시드 데이터(초기값) 를 위한 경로다. working DB(`./db/`) 는 항상 제외되며, 디바이스 영속 영역(`disk/<feature>/...`) 은 디바이스 측에서 런타임에 생성되므로 빌드 산출물에 포함되지 않는다. 자세한 정책은 `references/build-details.md` 의 "Disk Packaging Policy" 참고.

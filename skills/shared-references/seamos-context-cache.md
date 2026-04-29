@@ -182,3 +182,54 @@ jq -e '.last_project.fsp_completed_at and .last_project.sdk_app_completed_at' \
 ### Concurrency
 
 Writes use `flock` when available, falling back to a `mkdir`-based lock directory (`.seamos-context.json.lock.d/`) for portability. Combined with `.tmp` + `mv`, the JSON file is always valid even under concurrent invocations.
+
+## last_app_register 영역
+
+`update-app` 스킬이 마지막으로 성공한 등록의 컨텍스트를 캐시한다. 디바이스/앱 캐시 및 last_project 영역과는 별개의 독립 영역으로, 같은 `.seamos-context.json` 파일 안에 공존한다.
+
+### 필드
+
+| 필드 | 타입 | 의미 |
+|---|---|---|
+| `last_app_register.feuType` | string | 마지막으로 성공적으로 등록한 feuType (예: `arable/cabin`) |
+| `last_app_register.arch` | string | 마지막 등록의 ARCH 토큰 (예: `RCU4-3Q`) |
+| `last_app_register.appId` | string | 마지막 등록 대상 appId — 다른 appId 호출 시 캐시 무용 |
+| `last_app_register.updatedAt` | string (ISO 8601) | 마지막 갱신 시각 |
+
+### 읽기/쓰기 책임
+
+| 스킬 | 읽기 | 쓰기 |
+|---|---|---|
+| `update-app` | fallback 블록 + FeuType 캐시 흐름 | 등록 성공 후 4 개 필드 갱신 |
+
+다른 스킬은 본 영역을 읽거나 쓰지 않는다.
+
+### JSON 예시
+
+```json
+{
+  "deviceId": "...",
+  "deviceName": "...",
+  "appId": "app_test_001",
+  "appName": "...",
+  "updatedAt": "2026-04-29T10:00:00Z",
+  "last_project": {
+    "name": "...",
+    "...": "..."
+  },
+  "last_app_register": {
+    "feuType": "arable/cabin",
+    "arch": "RCU4-3Q",
+    "appId": "app_test_001",
+    "updatedAt": "2026-04-29T11:30:00Z"
+  }
+}
+```
+
+### 사용 흐름
+
+1. `update-app` 시작 시 `last_app_register.appId` 가 현재 호출의 appId 와 일치하는지 검사한다.
+2. 일치하면 `last_app_register.feuType` 를 후보 목록의 *첫 항목* 으로 제시한다 ("(last used)" 라벨). 자동 채택은 하지 않는다.
+3. appId 가 다르면 본 영역을 무시한다 — 다른 앱의 등록 흔적이므로 후보로 노출하지 않는다.
+4. 등록이 성공적으로 끝나면 4 개 필드를 갱신한다. 실패한 시도는 캐시에 쓰지 않는다.
+5. 본 영역에는 캐시 만료(TTL) 정책이 없다 — appId 일치 여부만으로 유효성을 판단한다.
