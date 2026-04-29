@@ -2,6 +2,29 @@
 
 All notable changes to **seamos-everywhere** are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [SemVer](https://semver.org/) (pre-1.0: minor bumps signal feature additions, patch bumps signal fixes).
 
+## [0.5.7] — 2026-04-30
+
+`update-app` 의 fallback 흐름이 `.fif` 파일명에서 feuType 을 추정하던 휴리스틱을 제거. ARCH 토큰 파싱과 feuType 명시 질문을 분리하고, `last_app_register` 캐시(v0.5.6) 와 결합해 잘못된 feuType 으로 marketplace 에 등록되던 사고 경로를 차단.
+
+### Fixed — `update-app` 파일명 → feuType 휴리스틱이 잘못된 ARCH 등록을 유발
+
+기존 fallback 은 `get_app_status` 응답에 `feuType` 필드가 없을 때 `.fif` 파일명에서 `feuType` 을 *추정*(예: `RCU4-3Q-20.fif → RCU4-3Q/20`) 했음. 같은 앱이 여러 ARCH 변형으로 빌드된 경우(`RCU4-3Q-20.fif`, `RCU4-7Q-20.fif`) 파일명에서 feuType 을 결정할 수 없고, 잘못된 feuType 으로 marketplace 에 등록되거나 다른 ARCH 디바이스에 잘못된 바이너리가 배포되는 보안/배포 정합성 결함이었음.
+
+- 파일명에서는 ARCH 토큰만 파싱(`<ARCH>-<VERSION>.fif` 컨벤션). feuType 은 *추정하지 않고* 별도 단계로 분리해 사용자에게 명시 질문.
+- ARCH 토큰 파싱 실패 시 ARCH 와 feuType 모두 직접 입력 fallback.
+- `--feu-type FEU` / `--arch ARCH` argument-hint 추가 — 자동화 파이프라인이 인터랙티브 단계 없이 명시 주입 가능.
+- 다중 ARCH 빌드가 BUILD_DIR 에 공존할 때 어느 ARCH 를 등록할지 명시 선택 단계 추가.
+- 확인 프롬프트에 (appId, feuType, ARCH, version) 4-tuple 모두 표시. 한 호출당 하나의 feuType 정책 명문화.
+
+### Added — `last_app_register` 캐시 흐름
+
+`update-app` 이 등록 성공 후 `last_app_register.{feuType, arch, appId, updatedAt}` 4 필드를 캐시. 다음 호출 시 같은 appId 라면 후보 목록의 첫 항목으로 `<feuType> (last used)` 제시 — **자동 채택은 하지 않음**, 항상 사용자 확인. appId 가 다르면 캐시 무용.
+
+### Added — 회귀 방지 테스트
+
+- `update-app/scripts/test/test-fallback-doc.sh` — 13 개 assertion: argument-hint, ARCH/feuType 분리, 휴리스틱 어휘 0건, 단일 feuType 정책, 다중 ARCH 분기, fixture 유효성.
+- `update-app/scripts/test/fixtures/get_app_status_no_feutype.json` — `feuType` 키 부재 mock (fallback 진입 트리거 시뮬레이션).
+
 ## [0.5.6] — 2026-04-30
 
 `build-fif` 의 disk 무차별 패키징 결함을 잡고, 빌드/regen/runtime 의 3 경로 정책(`./db/` working / `disk/<feature>/` persistent / `disk/seed/` allowlist) 을 6 개 문서에 일관 명시. `update-app` 측 fallback 휴리스틱 제거를 위한 `last_app_register` 캐시 스키마 신설(`update-app` 본 동작 변경은 v0.5.7 에서 따라옴).

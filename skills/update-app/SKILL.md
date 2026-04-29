@@ -3,7 +3,7 @@ name: update-app
 description: Upload a new version of an existing SeamOS app to the SDM marketplace. Use this skill whenever the user wants to update, upgrade, or push a new version of their app. Triggers on "앱 업데이트", "버전 업데이트", "새 버전 올려", "update app", "new version", "버전 업로드", "앱 버전". Also use when the user mentions updating a .fif file for an app that already exists on the marketplace, or wants to deploy a patch/update to a released app.
 user-invocable: true
 allowed-tools: Read, Glob, Grep, Bash, Write, Edit
-argument-hint: "[appId] [--dry-run]"
+argument-hint: "[appId] [--feu-type FEU] [--arch ARCH] [--dry-run]"
 ---
 
 # Update App Version on SDM Marketplace
@@ -105,27 +105,36 @@ Once the appId is determined, immediately call `get_app_status` MCP tool (`mcp__
 
 If appId is not found → warn user and go back to selection.
 
-**Fallback when `get_app_status` does not include feuType info:**
-The current backend response only returns a `versions` array — it does **not** carry a `feuType` field per version, so step 3-1 cannot show "현재 등록된 기기 타입" from this call alone. Detect this case and fall back gracefully:
+### 3-0. Fallback — `get_app_status` 응답에 `feuType` 이 없는 경우
 
-1. After parsing the response, check whether any version entry exposes a `feuType` (or equivalent) field.
-2. If **none** do, treat the registered-feuType list as **unknown** and skip the "이 앱에 등록된 기기 타입" subsection in step 3-1. Show only the .fif files found in `seamos-assets/builds/` and ask the user to either pick one of those filenames or type the feuType directly:
-   ```
-   현재 백엔드 응답에는 등록된 기기 타입 정보가 포함되어 있지 않습니다.
-   builds/ 폴더에서 발견한 파일을 기준으로 선택하거나 직접 입력해주세요:
-   1. AUTO-IT_RV-C1000.fif → feuType: AUTO-IT_RV-C1000
-   2. RCU4-3Q-20.fif       → feuType: RCU4-3Q/20  (파일명의 `-` 는 보통 `/` 로 환원되니 확인 필요)
-   직접 입력하려면 feuType 문자열을 그대로 적어주세요.
-   ```
-3. The same fallback applies to the **current version** lookup in step 3-2 — if the response does not include a per-feuType current version, ask the user for the version directly without an auto-suggested next-patch.
+응답에 `feuType` 키가 누락된 경우, 파일명에서 feuType 값을 도출하는 절차를 두지 않는다. 대신 다음 두 단계로 분리한다.
 
-This data is used in the next step for feuType selection and version suggestion.
+1. **ARCH 토큰 파싱**: `.fif` 파일명에서 ARCH 부분만 분리한다. 컨벤션은 `<ARCH>-<VERSION>.fif` — 마지막 `-` 앞까지가 ARCH, 뒤가 version. 예: `RCU4-3Q-20.fif` → ARCH=`RCU4-3Q`, version=`20`. 컨벤션을 따르지 않는 파일명(예: `myapp.fif`) 은 ARCH 인식에 실패한다.
+
+2. **feuType 명시 질문**: 사용자에게 다음 형식으로 묻는다 — "이 .fif 는 ARCH `<ARCH>` 빌드입니다. 어느 feuType 에 등록할까요?" 후보 목록은 (a) 컨텍스트 캐시의 `last_app_register.feuType` (해당 appId 일치 시, "(last used)" 라벨 부착), (b) `get_app_status` 가 부분적으로라도 반환한 기존 feuType 목록 — 합집합으로 제시. 후보가 없으면 빈 목록 + 직접 입력 안내. **후보를 임의 선택하지 않으며 — 항상 사용자 확인을 거친다.**
+
+3. **ARCH 인식 실패 fallback**: ARCH 토큰 파싱이 실패한 경우 "ARCH 를 자동 인식하지 못했습니다. 어느 ARCH 와 feuType 에 등록할까요?" 라는 메시지로 ARCH 와 feuType 둘 다 직접 입력 받는다.
+
+4. **`--feu-type` 명시 인자**: 호출 시 `--feu-type` 옵션이 주어졌다면 본 fallback 블록 전체를 skip 하고 해당 값을 그대로 사용한다 (ARCH 도 `--arch` 인자 우선). 자동화 파이프라인 대응 경로.
+
+### 3-0a. FeuType 캐시 흐름
+
+컨텍스트 캐시(`.seamos-context.json`) 의 `last_app_register` 영역을 읽고 쓴다.
+
+- **읽기 (fallback 단계)**: `last_app_register.feuType`, `last_app_register.arch`, `last_app_register.appId`, `last_app_register.updatedAt` 4개 필드를 읽는다. 현재 호출의 appId 와 캐시의 `last_app_register.appId` 가 *일치하는 경우에만* 후보 목록의 첫 항목으로 `<feuType> (last used)` 를 제시한다. **사용자 선택 없이 캐시 값을 그대로 반영하지 않으며 — 제시(suggest) 만 한다.**
+- **appId 불일치**: 캐시의 appId 와 다르면 lastFeuType 후보를 노출하지 않는다 — 다른 앱의 등록 흔적이므로 무용.
+- **쓰기 (등록 성공 후)**: 등록이 성공적으로 끝나면 같은 4개 필드를 갱신한다 (`updatedAt` 은 ISO 8601). 실패한 등록 시도는 캐시에 쓰지 않는다.
+- 본 영역은 다른 스킬이 사용하지 않는다 — `last_project`, 디바이스/앱 캐시 영역과 분리되어 있다 (`shared-references/seamos-context-cache.md` 참고).
 
 ### Step 3: Interactive Info Collection (one question at a time)
 
 Collect version info sequentially. Ask one question, wait for the answer, then ask the next. This keeps the interaction simple since there are only a few fields.
 
 #### 3-1. feuType Selection
+
+**다중 ARCH 빌드가 BUILD_DIR 에 공존하는 경우**: 한 워크스페이스에 `RCU4-3Q-20.fif` 와 `RCU4-7Q-20.fif` 처럼 여러 ARCH 의 `.fif` 가 동시에 존재할 수 있다. 이 경우 "여러 .fif 가 발견되었습니다. 어느 ARCH 를 등록하시겠습니까?" 형식으로 명시 선택을 받는다 — 자동으로 첫 번째를 고르지 않는다.
+
+본 호출은 한 번에 *하나의 feuType* 에만 대응한다 (one feuType per invocation). 여러 feuType 에 등록하려면 update-app 을 다시 실행한다.
 
 Present the feuTypes registered for this app (from Step 2-2) and the .fif files available in `seamos-assets/builds/`:
 
@@ -146,6 +155,13 @@ builds/ 폴더의 .fif 파일:
 **Wait for user response.**
 
 After selection, match the chosen feuType to a .fif file in builds/. If no matching file is found, tell the user which filename is expected and stop.
+
+확인 프롬프트 예시:
+```
+appId=app_test_001, feuType=arable/cabin, ARCH=RCU4-3Q, version=20 으로 업로드합니다. 진행할까요? [y/N]
+```
+
+위 4-tuple (appId, feuType, ARCH, target version) 을 모두 표시하여 사용자에게 최종 확인을 받는다.
 
 #### 3-2. Version Number
 
