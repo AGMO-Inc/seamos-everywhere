@@ -105,6 +105,10 @@ resolve_project_name() {
 #
 # Caller MUST pass the build temp workspace copy — never the user's source workspace.
 # Always returns 0 (safe under set -e).
+#
+# Structural safety: dry-run returns BEFORE any mutation code is reached.
+# Any future mutation logic added below the dry-run early-return cannot
+# affect dry-run callers, even if a caller mistakenly passes a user path.
 disk_packaging_policy() {
   local dry_run=0
   if [[ "${1:-}" == "--dry-run" ]]; then
@@ -123,16 +127,14 @@ disk_packaging_policy() {
   local retained=0
   local f
 
-  # Count + (optionally) delete files outside disk/seed/
+  # ── Count phase (no mutation) ──────────────────────────────────────────
+  # Count files outside disk/seed/.
   while IFS= read -r f; do
     [[ -z "$f" ]] && continue
     excluded=$((excluded + 1))
-    if [[ $dry_run -eq 0 ]]; then
-      rm -f "$f"
-    fi
   done < <(find "$disk_dir" -type f -not -path "$disk_dir/seed/*" 2>/dev/null)
 
-  # Count files retained under disk/seed/
+  # Count files retained under disk/seed/.
   if [[ -d "$disk_dir/seed" ]]; then
     while IFS= read -r f; do
       [[ -z "$f" ]] && continue
@@ -140,24 +142,29 @@ disk_packaging_policy() {
     done < <(find "$disk_dir/seed" -type f 2>/dev/null)
   fi
 
-  # Remove now-empty directories outside disk/seed/ (apply mode only)
-  if [[ $dry_run -eq 0 ]]; then
-    while IFS= read -r d; do
-      [[ -z "$d" ]] && continue
-      [[ "$d" == "$disk_dir" ]] && continue
-      [[ "$d" == "$disk_dir/seed" ]] && continue
-      case "$d" in
-        "$disk_dir/seed"/*) continue ;;
-      esac
-      rm -rf "$d"
-    done < <(find "$disk_dir" -mindepth 1 -type d -not -path "$disk_dir/seed" -not -path "$disk_dir/seed/*" 2>/dev/null)
-  fi
-
+  # Dry-run: report and return BEFORE the mutation phase.
   if [[ $dry_run -eq 1 ]]; then
     echo "would exclude $excluded files from disk/, would retain $retained files in disk/seed/"
-  else
-    echo "Excluded $excluded files from disk/, retained $retained files in disk/seed/"
+    return 0
   fi
+
+  # ── Mutation phase (apply mode only — never reached by dry-run) ───────
+  while IFS= read -r f; do
+    [[ -z "$f" ]] && continue
+    rm -f "$f"
+  done < <(find "$disk_dir" -type f -not -path "$disk_dir/seed/*" 2>/dev/null)
+
+  while IFS= read -r d; do
+    [[ -z "$d" ]] && continue
+    [[ "$d" == "$disk_dir" ]] && continue
+    [[ "$d" == "$disk_dir/seed" ]] && continue
+    case "$d" in
+      "$disk_dir/seed"/*) continue ;;
+    esac
+    rm -rf "$d"
+  done < <(find "$disk_dir" -mindepth 1 -type d -not -path "$disk_dir/seed" -not -path "$disk_dir/seed/*" 2>/dev/null)
+
+  echo "Excluded $excluded files from disk/, retained $retained files in disk/seed/"
   return 0
 }
 
@@ -500,8 +507,7 @@ if [ "$APP_TYPE" = "java" ]; then
     cp -r "$APP_PATH" /tmp/nvx/app_proj/
     # Remove target/ to prevent duplicate JAR glob match in container's package_java.sh
     rm -rf "/tmp/nvx/app_proj/$(basename "$APP_PATH")/target"
-    # Exclude DB files from FIF package
-    rm -f /tmp/nvx/app_proj/*/disk/*.mv.db /tmp/nvx/app_proj/*/disk/*.trace.db /tmp/nvx/app_proj/*/disk/*.mv.db.backup_*
+    # Apply disk/ allowlist (keep only disk/seed/, exclude all runtime DB state)
     [ -n "$APP_PATH" ] && disk_packaging_policy "/tmp/nvx/app_proj/$(basename "$APP_PATH")"
     cp "$JAR_FILE" /tmp/nvx/java_app_jar/
 else
