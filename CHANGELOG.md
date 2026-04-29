@@ -2,7 +2,7 @@
 
 All notable changes to **seamos-everywhere** are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [SemVer](https://semver.org/) (pre-1.0: minor bumps signal feature additions, patch bumps signal fixes).
 
-## [0.7.0] — 2026-04-30
+## [0.6.1] — 2026-04-30
 
 브랜드 일관성을 위해 MCP 설정·스킬·문서 전반의 `sdm` / `SDM` 표기를 `seamos` / `SeamOS` 로 일괄 정리. 이는 **breaking change** 로, plugin userConfig 키와 MCP 서버 이름이 변경되어 기존 설치 사용자는 키를 다시 설정해야 한다.
 
@@ -27,7 +27,7 @@ All notable changes to **seamos-everywhere** are documented here. Format follows
 
 ### Migration
 
-기존 v0.6.x 사용자는 다음을 수행:
+기존 v0.6.0 사용자는 다음을 수행:
 
 1. Claude Code plugin 설정에서 `sdm_api_key` / `sdm_api_url` 값을 복사해 새 키 `seamos_api_key` / `seamos_api_url` 로 재입력.
 2. 로컬 `.mcp.json` 의 서버 이름을 `seamos-marketplace` / `seamos-marketplace-local` 로 수정 (실제 키 값과 URL 은 그대로 유지).
