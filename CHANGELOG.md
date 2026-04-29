@@ -2,6 +2,35 @@
 
 All notable changes to **seamos-everywhere** are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [SemVer](https://semver.org/) (pre-1.0: minor bumps signal feature additions, patch bumps signal fixes).
 
+## [0.6.0] — 2026-04-30
+
+신규 스킬 `edit-plugins` — 기존 SeamOS 프로젝트의 plugin / interface 집합을 안전하게 변경하고, **변경이 실제 앱에 반영되도록 FSP + SDK skeleton 재생성을 자동 chain**. v0.5.x 까지는 SSOT 직접 편집 → `create-project --regen-fsp-only` → `regen-sdk-app` 의 3 단계를 사용자가 수동으로 묶어야 했고, 중간 단계 누락 시 running 앱이 stale FSP 를 계속 사용하는 silent failure 가 발생. 본 스킬은 이 묶음을 단일 진입점으로 통합하고, 자동 백업·롤백·offlineDB 검증·Bosch FD limitation 사후 감지까지 일괄 제공.
+
+### Added — `edit-plugins` 스킬
+
+`SKILL.md` + `scripts/edit-plugins.sh` (`inspect` / `apply` 서브커맨드) + 3 개 e2e eval. 트리거: "플러그인 추가", "플러그인 제거", "GPS 빼줘", "IMU 넣어줘", "edit plugins", "add plugin", "remove plugin" 등.
+
+- **워크플로**: ① `inspect` — 현재 SSOT 의 plugin / entry JSON 출력 → ② 카탈로그(`seamos-plugins/references/catalog.md`) + 현재 사용 중 plugin 표시 → ③ 추가 plugin 의 인터페이스 / Cyclic 주기 / Adhoc 모드를 사용자에게 질문 → ④ `apply --dry-run` 으로 SSOT diff + 계획된 regen 시퀀스 미리보기 → ⑤ `--reset-tests` 여부 사용자 확인 → ⑥ 최종 확인 후 patch 적용 + `create-project --regen-fsp-only` + `regen-sdk-app` 자동 chain.
+- **patch 스키마**: `{ add: [{branch, config}], remove: [{branch}] }`. add/remove 동일 branch 충돌 / 빈 결과 / 잘못된 config 문자열은 exit 2 로 차단.
+- **자동 백업 + 롤백**: SSOT 갱신 직전 `<PROJECT>-interface.json.bak.<UTC-ISO>` 생성. FSP regen 실패 시 SSOT 자동 원복. SDK regen 실패 시 SSOT/FSP 보존하고 사용자에게 명시 롤백 명령 안내.
+- **offlineDB 검증**: 신규 SSOT 를 `validate-interface-json.sh` 로 재검증 — unknown plugin / interface / config 진입 차단.
+- **`--image-tag` 패스스루**: 사용자 환경에 `seamos-fd-headless:latest` 가 없고 `public.ecr.aws/g0j5z0m9/seamos-fd-headless:latest` 만 있는 경우(흔한 케이스), `--image-tag` (또는 `SEAMOS_FD_IMAGE` env) 를 chain 된 두 regen 모두에 그대로 forward. 미적용 시 SDK regen 이 silent no-op 으로 끝나는 경로 차단.
+- **Bosch FD limitation 사후 감지**: `UPDATE_SDK_APP` 은 앱 프로젝트에 `customui/` 폴더가 없을 때 silent no-op (SUCCESS 마커 + `SEVERE: App project does not contain the custom ui folder` 만 로그). 본 스킬은 SDK regen 후 로그를 grep 해 SEVERE 발견 시 사용자에게 명시 WARNING + mitigation 안내(신규 프로젝트면 `create-project` 새로 / 사용자 코드 있으면 stale `src-gen/<removed-plugin>/` 수동 청소).
+- **`--force-clean` 절대 금지 정책**: 사용자 코드 보존이 원칙. SKILL.md 의 "Important Notes" 에 명시 — `regen-fsp-only` → `regen-sdk-app` chain 만 사용.
+
+### Added — e2e 평가 (3 개 케이스, 실제 Docker)
+
+`evals/evals.json` 의 3 개 케이스를 실제 fixture 프로젝트(create-project 산출 113MB 워크스페이스) 위에서 with-skill / without-skill 양쪽으로 검증.
+
+- `add-plugin-happy-path` — IMU/accl, IMU/angle 추가 + `--reset-tests`. with_skill 880s 완료, FSP·SDK 양쪽 SUCCESSFULLY. without_skill 12 분 cap 내 chain 미완.
+- `remove-plugin-with-confirmation` — GPSPlugin 전부 제거. with_skill 자동 백업/롤백/SEVERE 감지 검증. without_skill 은 FSP 만 정리되고 SDK 19 개 stale 파일 잔존 — **본 스킬이 prevent 하려는 정확한 failure 모드 입증**.
+- `missing-context-routing` — `.seamos-context.json` 부재 시 exit 64 + `create-project` 안내. USER_ROOT 미변경 검증.
+
+### Fixed — e2e 가 발견한 실제 결함 2 건
+
+- **`set -u` + 빈 배열 unbound variable** at `edit-plugins.sh:295` — `--reset-tests` 미사용(가장 흔한 경로) 시 `${regen_args[@]}` 가 죽음. `${regen_args[@]+"${regen_args[@]}"}` 가드로 수정.
+- **`--image-tag` 미전달** — SDK regen 이 default 태그(`seamos-fd-headless:latest`)로 fallback 해 사용자 환경의 ECR 풀 경로와 불일치 → silent no-op. CLI 인자 + env 양쪽 추가, dry-run 출력에도 image tag 표시.
+
 ## [0.5.9] — 2026-04-30
 
 v0.5.7 의 `update-app` SKILL.md `argument-hint` 가 광고하던 `--feu-type` / `--arch` 인자를 `update.sh` 도 직접 받도록 구현. 자동화 파이프라인이 인터랙티브 단계 없이 `update.sh` 를 직접 호출 가능 — 스킬 레이어 우회 경로 완성.

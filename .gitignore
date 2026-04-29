@@ -19,3 +19,6 @@ docker/fd-headless/prototype/*.log
 
 __pycache__/
 *.pyc
+
+# edit-plugins skill workspace (eval fixtures and iterations — heavy and per-developer)
+edit-plugins-workspace/

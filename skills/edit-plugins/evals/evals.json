@@ -1,0 +1,92 @@
+{
+  "skill_name": "edit-plugins",
+  "evals": [
+    {
+      "id": 1,
+      "name": "add-plugin-happy-path",
+      "prompt": "내 SeamOS 프로젝트에 IMU 플러그인 추가해줘. 어떤 시그널을 쓸 수 있는지 보여주고 골라줘.",
+      "expected_output": "Claude triggers the edit-plugins skill, runs `inspect` to read current SSOT state, shows the plugin catalog (marking which plugins are already in use), reads `seamos-plugins/references/detail/IMU.md` to surface the IMU interface table, asks the user which interfaces and which Cyclic period(s), composes a patch JSON, runs `apply --dry-run` to show the diff and planned regen, asks about `--reset-tests`, gets explicit confirmation, then runs `apply` which chains create-project --regen-fsp-only and regen-sdk-app. Must NOT silently skip regen.",
+      "files": [],
+      "assertions": [
+        {
+          "id": "triggers-edit-plugins",
+          "description": "Invokes edit-plugins skill (not regen-sdk-app, not create-project, not seamos-plugins as a code-gen step)"
+        },
+        {
+          "id": "runs-inspect-first",
+          "description": "Runs `edit-plugins.sh inspect` (or equivalent reading) before proposing changes, to know what's already there"
+        },
+        {
+          "id": "shows-imu-interfaces",
+          "description": "Reads/quotes seamos-plugins/references/detail/IMU.md to show the interface table before asking user to pick"
+        },
+        {
+          "id": "asks-cyclic-period",
+          "description": "For an `In` (Subscribe) interface picked by the user, asks for or proposes an operation mode (Cyclic with period, or Adhoc)"
+        },
+        {
+          "id": "asks-reset-tests",
+          "description": "Before applying, asks the user whether to also pass --reset-tests (regenerate .gen.tests/) — does not silently decide"
+        },
+        {
+          "id": "chains-regen",
+          "description": "After patch apply, runs (or instructs the script to run) BOTH create-project --regen-fsp-only AND regen-sdk-app — not just one"
+        },
+        {
+          "id": "no-force-clean",
+          "description": "Never proposes or runs create-project --force-clean (would destroy user app code)"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "remove-plugin-with-confirmation",
+      "prompt": "GPSPlugin 더 이상 안 써. 빼줘.",
+      "expected_output": "Claude triggers edit-plugins, inspects current SSOT, confirms with the user whether to remove ALL GPSPlugin entries or a subset, builds a remove-only patch, shows dry-run diff, asks about --reset-tests, then applies + chains regen. Must preserve the user's app code (no force-clean).",
+      "files": [],
+      "assertions": [
+        {
+          "id": "triggers-edit-plugins",
+          "description": "Invokes edit-plugins skill"
+        },
+        {
+          "id": "confirms-removal-scope",
+          "description": "Asks whether to remove all GPSPlugin entries or a subset, rather than silently removing everything"
+        },
+        {
+          "id": "shows-dry-run-diff",
+          "description": "Runs `apply --dry-run` and surfaces the diff to the user before mutating the SSOT"
+        },
+        {
+          "id": "chains-regen",
+          "description": "Runs both create-project --regen-fsp-only AND regen-sdk-app after the SSOT change"
+        },
+        {
+          "id": "no-force-clean",
+          "description": "Never proposes create-project --force-clean"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "name": "missing-context-routing",
+      "prompt": "플러그인 좀 추가해줘",
+      "expected_output": "USER_ROOT has no .seamos-context.json (or no last_project.name). The skill must detect this and tell the user to run create-project first — not invent defaults, not silently create a fresh interface JSON. Exit 64 from the script is correct.",
+      "files": [],
+      "assertions": [
+        {
+          "id": "detects-missing-context",
+          "description": "Detects missing .seamos-context.json or missing last_project.name"
+        },
+        {
+          "id": "routes-to-create-project",
+          "description": "Tells the user to run `create-project` first instead of guessing project name / building a new interface.json"
+        },
+        {
+          "id": "no-silent-mutation",
+          "description": "Does not write or modify any -interface.json file when context is missing"
+        }
+      ]
+    }
+  ]
+}
