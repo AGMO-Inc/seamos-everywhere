@@ -7,7 +7,7 @@
 **Claude Code plugin for the SeamOS AI Native developer ecosystem**
 
 [![Version](https://img.shields.io/badge/version-0.6.1-blue.svg)](https://github.com/AGMO-Inc/seamos-everywhere/releases)
-[![Skills](https://img.shields.io/badge/skills-7-orange.svg)](#skills)
+[![Skills](https://img.shields.io/badge/skills-12-orange.svg)](#skills)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey.svg)](LICENSE)
 [![Org](https://img.shields.io/badge/org-AGMO--Inc-green.svg)](https://github.com/AGMO-Inc)
 
@@ -199,6 +199,79 @@ SeamOS app framework code generation guide. Provides language-specific patterns 
 
 ---
 
+### seamos-customui-client
+
+Browser-side companion to `seamos-app-framework`. Covers everything the HTML/JS inside a SeamOS app's CustomUI needs to talk to its own WebSocket: dynamically-assigned port discovery (`get_assigned_ports` with relative URL), the four-frame WS protocol (`publish` / `publish_ack` / `topic` / `external_api_response`), app-defined REST routes on the same port, and the correlation-id cloud-proxy envelope for external HTTPS.
+
+**Triggers:** `CustomUI` · `WebSocket 안 와` · `WS 연결` · `fetch 404` · `CORS 막힘` · `토픽 표시` · `port discovery` · `cloud proxy`
+
+```
+/seamos-everywhere:seamos-customui-client
+```
+
+**Flow:**
+1. Discovers the app's external port via `get_assigned_ports` (relative URL — never absolute)
+2. Opens WebSocket to `ws://<host>:<port>/socket`
+3. Speaks the four-frame protocol — `publish` outgoing, `publish_ack` / `topic` / `external_api_response` incoming
+4. (Optional) Proxies external HTTPS via cloud-proxy envelope with correlation-id
+
+| Feature | Details |
+|---------|---------|
+| Frames | 4 (publish · publish_ack · topic · external_api_response) |
+| REST routes | App-defined routes go through the same assigned port, not the UI gateway |
+| Cloud proxy | correlation-id envelope for marketplace / external API access |
+
+---
+
+### seamos-customui-react
+
+CustomUI 표준 UI 스킬 — React 18 + TypeScript + `@seamos/ads` (Agmo Design System). 운영 중 기계 위 UI 라는 특수 환경 제약(진동·흔들림, 직사광·저조도, 장갑, 한 손 조작, 수~수십 시간 연속 작업)에서 역산한 사용자 경험 원칙 10개와 ADS MCP·토큰 카테고리 안내를 제공한다. 통신 layer 는 `seamos-customui-client` 로 위임하고, 그 vanilla helper 를 React hook 으로 감싸 쓰는 패턴을 별도로 제공.
+
+**Triggers:** `CustomUI 만들어` · `ADS 컴포넌트` · `버튼 추가` · `토픽 데이터 화면` · `React UI` · `@seamos/ads` · `디자인 시스템` · `build CustomUI screen` · `add ADS button` · `use design system`
+
+```
+/seamos-everywhere:seamos-customui-react
+```
+
+**Flow:**
+1. 사용자 경험 원칙 체크 — 화면 구성·정보 우선순위·터치 제스처 결정 (Core 7 + Operational Context 3)
+2. ADS MCP 조회 — `search_components` → `get_component(name)` (추측 금지)
+3. 통신 필요 시 `seamos-customui-client` hook 사용 (`useApiBase` / `useTopic` / `usePublish` / `useExternalApi`)
+4. 안티 패턴 카탈로그와 대조 후 출력
+
+| Feature | Details |
+|---------|---------|
+| UX 원칙 | 10개 (Core 7 + Operational Context 3) |
+| ADS MCP | `list_components` · `search_components` · `get_component` |
+| 토큰 카테고리 | color · spacing · typography · shadow · radius · motion |
+| 통신 | `seamos-customui-client` 의 helper 를 React hook 으로 래핑 |
+
+---
+
+### run-app
+
+Run a SeamOS app locally inside Docker — CPP / Java auto-detected. Two run modes (`app-builder` for pure JVM, `--via-fd-cli` for CPP with Platform Service runtime baked in) plus a `--diagnose` mode that probes a running app's data flow (WS frames, MQTT, UI port). CPP automatically routes to `--via-fd-cli` because Provider register fails on the lighter `app-builder` image.
+
+**Triggers:** `로컬에서 앱 실행` · `로컬 시뮬레이터 띄워` · `fd-cli로 실행` · `데이터 흐름 진단` · `ws 프레임 안 와` · `provider register 안 됨` · `run app locally` · `diagnose run-app`
+
+```
+/seamos-everywhere:run-app
+```
+
+**Flow:**
+1. Auto-detects `APP_TYPE` from `FDProject.props` / `<APP>_CPP_SDK/` (CPP → `--via-fd-cli`, Java → `app-builder`)
+2. Pulls the appropriate Docker image (pinned, `linux/amd64`)
+3. Runs the app inside the container (with optional `--with-mqtt`, `--inject-data`, `--props`)
+4. (Optional `--diagnose` mode) probes WS / MQTT / UI port and reports data-flow health
+
+| Feature | Details |
+|---------|---------|
+| Modes | `app-builder` (Java) · `--via-fd-cli` (CPP) · `--diagnose` |
+| Auto-routing | CPP forced to `--via-fd-cli` (Platform Service runtime required) |
+| Apple Silicon | `--platform linux/amd64` pinned, Rosetta 2 emulation warning emitted |
+
+---
+
 ### build-fif
 
 Build a deployable FIF (Feature Installation File) package using Docker. Supports both Java (Maven) and C++ (CMake) SeamOS projects with auto-detection.
@@ -265,14 +338,43 @@ Re-run FD Headless `UPDATE_SDK_APP` on an existing project. Refreshes the genera
 
 ---
 
+### edit-plugins
+
+Add or remove SeamOS plugins (and their interfaces) on an **existing** project. Walks plugin catalog → interface selection → diff preview → apply, then automatically chains `create-project --regen-fsp-only` and `regen-sdk-app` so the change actually reaches the running app. Replaces the 3-step manual workflow that users get wrong (or stop halfway through).
+
+**Triggers:** `플러그인 추가` · `플러그인 제거` · `GPS 빼줘` · `IMU 넣어줘` · `인터페이스 추가` · `interface 빼` · `edit plugins` · `add plugin` · `remove plugin` · `interface.json 수정`
+
+```
+/seamos-everywhere:edit-plugins
+```
+
+**Flow:**
+1. Reads SSOT `<USER_ROOT>/<PROJECT>-interface.json` and shows current plugin / interface set
+2. Interactive add / remove with offlineDB validation and diff preview
+3. Backs up interface.json, applies changes
+4. Auto-chains `create-project --regen-fsp-only` (FSP regeneration — app code preserved)
+5. Auto-chains `regen-sdk-app` (merges new SDK hooks into the existing app)
+
+| Feature | Details |
+|---------|---------|
+| Auto-chain | Always re-syncs FSP + SDK + skeleton — silent stale FSP impossible |
+| Backup | Automatic interface.json backup with rollback |
+| Bosch FD | Post-detection of Bosch FD limitations |
+
+---
+
 ### Skill comparison
 
 | Want to... | Skill |
 |---|---|
 | Create a new SeamOS project (FSP + SDK/APP skeleton) | `create-project` |
+| Add / remove plugins or interfaces on an existing project | `edit-plugins` |
 | Merge FSP changes into an existing app (preserve user code) | `regen-sdk-app` |
 | Generate REST, WebSocket, DB, or Lifecycle framework code | `seamos-app-framework` |
 | Look up plugin interfaces and generate signal code | `seamos-plugins` |
+| Talk to the WebSocket / app-defined REST from CustomUI HTML/JS | `seamos-customui-client` |
+| Build CustomUI with React + ADS (사용자 경험 원칙 + 토큰) | `seamos-customui-react` |
+| Run / simulate / diagnose the app locally (Docker) | `run-app` |
 | Build a `.fif` deployment package | `build-fif` |
 | Publish a brand-new app to the marketplace | `upload-app` |
 | Push a new version of an existing app | `update-app` |
