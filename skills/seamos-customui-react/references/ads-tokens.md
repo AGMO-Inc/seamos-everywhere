@@ -1,34 +1,35 @@
-# ADS Tokens — 카테고리 + 사용 패턴 + MCP 흐름
+# ADS Tokens — categories, usage, MCP flow
 
-ADS는 디자인 토큰을 **CSS Variables (`--ads-*`)** 형태로 제공한다.
-**실제 토큰 이름·값은 MCP의 `get_component`/`list_components`에서
-가져온다 — 본 문서는 카테고리·구조·사용 패턴만 안내한다.**
+ADS exposes design tokens as **CSS Variables (`--ads-*`)**.
+**Actual token names and values come from the MCP** —
+`get_component` / `list_components`. This document describes
+categories, structure, and usage patterns only.
 
 ---
 
-## 토큰 카테고리
+## Token categories
 
-| 카테고리 | 변수 패턴 | 용도 |
+| Category | Variable pattern | Use |
 |---|---|---|
-| **color** | `var(--ads-color-*)` | 텍스트·배경·border, 상태(success/warning/danger), brand |
-| **spacing** | `var(--ads-spacing-*)` | margin·padding·gap, layout grid |
-| **typography** | `var(--ads-font-*)` / `var(--ads-text-*)` | font-family, size, weight, line-height |
-| **shadow** | `var(--ads-shadow-*)` | elevation, focus ring |
+| **color** | `var(--ads-color-*)` | text · background · border, status (success/warning/danger), brand |
+| **spacing** | `var(--ads-spacing-*)` | margin · padding · gap, layout grid |
+| **typography** | `var(--ads-font-*)` / `var(--ads-text-*)` | font-family · size · weight · line-height |
+| **shadow** | `var(--ads-shadow-*)` | elevation · focus ring |
 | **radius** | `var(--ads-radius-*)` | border-radius |
-| **motion** | `var(--ads-motion-*)` | duration, easing |
+| **motion** | `var(--ads-motion-*)` | duration · easing |
 
-각 카테고리 안의 정확한 토큰 이름(예: `--ads-color-text-primary`,
-`--ads-spacing-md`)은 ADS 버전마다 다를 수 있으므로 **반드시 MCP에서
-조회**한다.
+The exact token names within each category (e.g.
+`--ads-color-text-primary`, `--ads-spacing-md`) can change between
+ADS versions, so **always query the MCP** instead of memorizing.
 
 ---
 
-## 사용 패턴
+## Usage patterns
 
 ### CSS-in-JS / styled
 
 ```tsx
-import { styled } from 'styled-components'  // 또는 ADS 권장 방식
+import { styled } from 'styled-components'  // or whatever ADS recommends
 
 const Card = styled.div`
   background: var(--ads-color-surface);
@@ -39,82 +40,86 @@ const Card = styled.div`
 `
 ```
 
-### 인라인 style — 토큰만, 직접 값 금지
+### Inline style — tokens only, no raw values
 
 ```tsx
-// ❌ 직접 값
+// ❌ raw values
 <div style={{ color: '#1A1A1A', padding: 16 }} />
 
-// ✅ 토큰 변수
+// ✅ token variables
 <div style={{
   color: 'var(--ads-color-text-primary)',
   padding: 'var(--ads-spacing-md)',
 }} />
 ```
 
-### ADS 컴포넌트의 props로 전달
+### Pass tokens through ADS component props
 
-ADS 컴포넌트는 대부분 토큰을 내부적으로 사용한다. 사용자는 props
-이름만 알면 된다.
+ADS components consume tokens internally. The user only needs to know
+the prop names.
 
 ```tsx
-// 컴포넌트가 토큰을 알아서 적용
-<Button variant="primary" size="lg">저장</Button>
+// The component applies the right tokens
+<Button variant="primary" size="lg">Save</Button>
 <Stack gap="md">...</Stack>
 ```
 
-각 컴포넌트가 **어떤 props로 어떤 토큰을 받는지**는 `get_component`로
-확인.
+For each component, **which props map to which tokens** is what
+`get_component` returns.
 
 ---
 
-## MCP 호출 흐름
+## MCP call flow
 
 ```
-[1] 모르는 컴포넌트 — 이름이 무엇인지 모름
+[1] Unknown component — name not known
     → search_components(query)
-       예: search_components("토글 입력")
-       → 후보 목록과 짧은 설명 반환
+       e.g. search_components("toggle input")
+       → returns candidate list with short descriptions
 
-[2] 사용 직전 — props·예제·CSS 변수 확인
+[2] Right before use — verify props / examples / variables
     → get_component(name)
-       예: get_component("Button")
-       → props 시그니처, 사용 예제, 의존하는 CSS 변수 반환
+       e.g. get_component("Button")
+       → returns prop signature, usage examples, dependent CSS variables
 
-[3] 권장 패턴 그대로 사용
-    → MCP가 알려주는 권장 사용 예제를 따름
-       (Flat이든 Compound든 컴포넌트별로 권장 패턴이 다름)
+[3] Apply the recommended pattern as-is
+    → follow the MCP-returned recommended example
+       (Flat vs Compound varies per component — never hard-coded by
+       this skill)
 ```
 
-### 안 되는 흐름
+### What not to do
 
 ```
-✗ 기억으로 props 적기 (sloppy)
-✗ 다른 디자인 시스템의 props 추측해서 적기 (예: Material UI 추측)
-✗ list_components 한 번 호출하고 그 결과를 캐싱해 며칠 동안 그대로
-   사용 (ADS 버전 업그레이드 후 깨짐)
+✗ Write props from memory (sloppy)
+✗ Guess props from a different design system (e.g. Material UI)
+✗ Call list_components once, cache the result, and rely on it for
+   days (ADS version upgrades will silently break you)
 ```
 
 ---
 
-## 메타 가이드
+## Meta rules
 
-- **추측 금지.** ADS의 진실의 출처는 MCP다. 사용 직전 호출.
-- **토큰 값 하드코딩 금지.** 색상·spacing·typography를 직접 적으면
-  테마 변경/다크 모드/대비 모드 전환이 무력화된다.
-- **카테고리 외부 토큰 만들지 말 것.** 새 토큰이 필요하면 ADS 레포에
-  이슈/PR.
-- **var(--ads-*)가 아닌 변수 이름 패턴**이 필요하다고 느낀다면 ADS가
-  그 카테고리를 아직 정의하지 않은 것 — ADS에 보고.
+- **No guessing.** The MCP is the source of truth. Call it right
+  before use.
+- **No hardcoded token values.** Hardcoding color / spacing /
+  typography breaks theme switching, dark mode, and accessibility
+  contrast modes.
+- **Don't invent new categories.** If a new token is needed, file an
+  issue / PR on the ADS repo.
+- If you find yourself wanting a non-`var(--ads-*)` variable name
+  pattern, that's a sign ADS hasn't defined that category yet — report
+  it to ADS.
 
 ---
 
-## 토큰 조회 빠른 참조
+## Quick reference
 
-| 상황 | 호출 |
+| Situation | Call |
 |---|---|
-| "어떤 컴포넌트들이 있는지 보고 싶다" | `list_components` |
-| "버튼 비슷한 게 있나?" | `search_components("button")` |
-| "Button 어떻게 쓰는지 정확히 알고 싶다" | `get_component("Button")` |
-| "토글이 있나? 이름이 뭐지?" | `search_components("toggle switch")` |
-| "이 컴포넌트가 쓰는 CSS 변수는?" | `get_component(name)` 응답의 변수 섹션 |
+| "What components are even available?" | `list_components` |
+| "Is there something like a button?" | `search_components("button")` |
+| "How do I use Button correctly?" | `get_component("Button")` |
+| "Is there a toggle? What's it called?" | `search_components("toggle switch")` |
+| "Which CSS variables does this component use?" | `get_component(name)` → variables section |

@@ -1,29 +1,31 @@
-# UX Principles — 상세
+# UX Principles — detailed
 
-각 원칙: **왜 / ✅ Do / ❌ Don't / 예시**.
+Each principle: **why / ✅ Do / ❌ Don't / example**.
 
-전제 환경: 진동·흔들림이 있는 운영 중 기계, 야외 직사광·저조도, 장갑
-착용, 한 손 조작, 수~수십 시간 연속 작업.
+Operating environment (premise): vibration, direct sunlight ↔ dim
+conditions, gloved hands, one-handed operation, multi-hour continuous
+use.
 
 ---
 
 ## Core 7
 
-### 1. Easy & Safe — 한 손, 양손 UI 금지
+### 1. Easy & Safe — one hand, no two-handed UI
 
-**왜.** 사용자의 다른 한 손은 항상 핸들·조작 레버 위에 있다. UI가
-양손을 요구하면 그 순간 기계 조작이 멈추거나 위험해진다. 진동 환경에서
-정밀한 손동작은 실패한다.
+**Why.** The user's other hand is always on a steering wheel or control
+lever. The moment the UI demands two hands, machine control either
+stops or becomes dangerous. Precision finger motion fails under
+vibration.
 
 **✅ Do**
-- 모든 인터랙션을 큰 단일 탭으로 가능하게
-- 장갑 기준 최소 64dp 터치 타겟
-- 작업면에서 시선이 떠나지 않도록 시각 자극 최소화
+- Make every interaction reachable as a single tap
+- Minimum 64dp touch targets (gloved-hand baseline)
+- Minimize visual stimuli that pull the eye away from the work surface
 
 **❌ Don't**
-- 멀티 터치 제스처 (핀치 줌, 두 손가락 탭)
-- 한 손가락으로 누르는 동시에 다른 손가락으로 끄는 방식
-- 시선을 빨아들이는 트랜지션·자동 스크롤 텍스트
+- Multi-touch gestures (pinch zoom, two-finger tap)
+- Press-and-hold while another finger does something else
+- Eye-grabbing transitions, auto-scrolling text
 
 ```tsx
 // ❌
@@ -31,179 +33,190 @@
 
 // ✅
 <Stack gap="lg">
-  <Button size="xl" label="확대" onClick={zoomIn} />
-  <Button size="xl" label="축소" onClick={zoomOut} />
+  <Button size="xl" label="Zoom in" onClick={zoomIn} />
+  <Button size="xl" label="Zoom out" onClick={zoomOut} />
 </Stack>
 ```
 
 ---
 
-### 2. Glanceability + 즉시 응답 — 시선 1~2초, 입력 응답 0.25초
+### 2. Glanceability + immediate response — 1–2 sec read, 0.25 sec feedback
 
-**왜.** 작업 중 사용자가 디스플레이에 줄 수 있는 시간은 1~2초다. 그
-안에 정보를 인지하지 못하면 작업면에서 시선이 너무 오래 떠나 사고가
-난다. 입력 후 0.25초 안에 시각 피드백이 없으면 사용자는 "안 눌렸나?"
-라고 의심해서 다시 누르고, 그 결과 의도치 않은 중복 입력이 발생한다.
+**Why.** During work the user can spare only 1–2 seconds for the
+display. If the information is not legible in that window, the eye
+stays off the work surface too long and accidents happen. After an
+input, if there is no visual feedback within 0.25 seconds, the user
+suspects "did it not register?", taps again, and creates an
+unintended duplicate input.
 
 **✅ Do**
-- 고대비 (직사광에서도 읽힘)
-- 큰 글자, 큰 숫자
-- 색에 더해 형태·위치·아이콘·텍스트로도 의미 구분
-- 입력 즉시 시각 피드백 (눌림 상태, 색 변화)
+- High contrast (legible in direct sunlight)
+- Large type, large numbers
+- Distinguish meaning by color **plus** shape, position, icon, text
+- Visual feedback the moment the input lands (pressed state, color shift)
 
 **❌ Don't**
-- 옅은 회색만으로 비활성 표시 (직사광에서 안 보임)
-- 색만으로 success/danger 구분
-- 작은 글자, 한 줄에 너무 많은 정보
-- 응답 지연을 로딩 인디케이터로 가리기
+- Light grey only for disabled state (invisible in sunlight)
+- Color-only success / danger
+- Small type, too much information per row
+- Hide response delay behind a loading indicator
 
 ```tsx
-// ❌ — 색만으로 위험 표시
-<Text color="red">엔진 과열</Text>
+// ❌ — color-only danger
+<Text color="red">Engine overheat</Text>
 
-// ✅ — 색 + 아이콘 + 위치(상단 고정)
+// ✅ — color + icon + position (top-fixed)
 <AlertBanner severity="danger" icon="thermometer" position="top-fixed">
-  엔진 과열
+  Engine overheat
 </AlertBanner>
 ```
 
 ---
 
-### 3. Consistency — ADS·SeamOS UI 표준 그대로
+### 3. Consistency — follow ADS / SeamOS UI as-is
 
-**왜.** 사용자는 한 디바이스에서 여러 앱을, 한 작업장에서 여러 브랜드의
-기계를 옮겨 다닌다. 아이콘·색·위치·인터랙션이 일관되어야 학습 비용이
-0에 가깝다. 한 화면만의 special case 패턴이 늘어나면 사용자는 매번
-다시 배워야 한다.
+**Why.** A user moves between multiple apps on one device, and between
+multiple brand machines on one site. Icons, colors, positions, and
+interactions must be consistent so learning cost is near zero. Once
+"this one screen has a slightly different pattern" creeps in, the
+user has to relearn everywhere.
 
 **✅ Do**
-- ADS가 제공하는 컴포넌트·아이콘·색·spacing 그대로 사용
-- 도메인에 표준 표기·아이콘이 있으면 그것을 따름
-- "이 화면만 약간 다르게"의 유혹 거부
+- Use ADS components, icons, colors, spacing as shipped
+- Follow domain-standard notations / icons where they exist
+- Resist the "just slightly different here" temptation
 
 **❌ Don't**
-- ADS 컴포넌트를 wrapping해 색·spacing 바꿔서 새 컴포넌트로 export
-- 한 화면에서만 다른 layout grid·typography
-- ADS 토큰을 우회해 직접 색 지정
+- Wrap an ADS component to override its color or spacing and re-export
+  as a new component
+- A different layout grid / typography for one screen only
+- Bypass ADS tokens and hand-pick colors
 
 ```tsx
-// ❌ — wrapping으로 임의 변형
+// ❌ — wrapping with arbitrary overrides
 function MyButton(props) {
   return <Button {...props} style={{ background: '#0066ff', borderRadius: 4 }} />
 }
 
-// ✅ — ADS 그대로
-<Button variant="primary" size="lg">저장</Button>
+// ✅ — ADS as-is
+<Button variant="primary" size="lg">Save</Button>
 ```
 
 ---
 
-### 4. Simplicity in Content — 사용자 언어, 꼭 필요한 것만
+### 4. Simplicity in content — operator language, only what is needed
 
-**왜.** 매뉴얼을 보지 않는다. 첫 화면만 보고 시작 가능해야 한다. 시그널
-이름·약어·기술 용어를 그대로 노출하면 사용자는 매번 의미를 추측해야
-하고, 그 추측이 틀리면 작업이 잘못된다.
+**Why.** The manual is not read. The first screen alone must be enough
+to get started. Exposing raw signal names, abbreviations, and
+technical terms forces the user to guess meaning every time, and a
+wrong guess means wrong work.
 
 **✅ Do**
-- **Casual Concept**: 사용자가 쓰는 작업 도메인 자연어
-- **Minimum Feature**: 현재 작업 흐름에 직결된 정보·기능만
-- **Less Policy**: 외워야 할 규칙·순서 최소화
-- 현장에서 이미 통용되는 표준 약어는 보존 (임의 한글화 금지)
+- **Casual concept**: domain-natural language the operator already uses
+- **Minimum feature**: only information directly tied to the current
+  workflow
+- **Less policy**: minimize rules and sequences the user must memorize
+- Preserve standard abbreviations already in field use (don't translate
+  them arbitrarily)
 
 **❌ Don't**
-- 시그널 이름·CAN 약어·내부 코드 그대로 노출
-- 모니터링 화면에 통계·로그·설정 섞기
-- 첫 진입 시 "튜토리얼 7단계" 같은 강제 학습
+- Raw signal names / CAN abbreviations / internal codes verbatim
+- Mix statistics / logs / settings into the monitoring screen
+- Force a "7-step tutorial" on first entry
 
 ```tsx
 // ❌
 <Field label="Hyd_Press_Sensor_1">{value}</Field>
 
 // ✅
-<Field label="유압">{value} bar</Field>
+<Field label="Hydraulic pressure">{value} bar</Field>
 ```
 
 ---
 
-### 5. One Thing Per Screen — 한 화면 한 목표
+### 5. One thing per screen — single goal
 
-**왜.** 작업 중 사용자가 동시에 처리할 수 있는 것은 하나다. 한 화면에
-여러 목표가 섞이면 어디를 봐야 할지 결정하는 데 1~2초가 더 걸린다.
-모드 전환 UI가 모니터링 화면에 같이 있으면 운전 중 잘못 누른다.
+**Why.** During work the user can attend to one thing at a time. When
+multiple goals share a screen, the cost of deciding where to look
+adds 1–2 seconds. A mode switcher next to monitoring causes
+mis-presses while operating.
 
 **✅ Do**
-- 작업 중 = 모니터링만
-- 설정·캘리브레이션·로그는 별도 화면
-- 모드(작업/주행/대기)별로 다른 화면
+- During work = monitoring only
+- Settings, calibration, logs on separate screens
+- Different screens for different modes (work / drive / standby)
 
 **❌ Don't**
-- 한 화면에 모니터링 + 모드 전환 + 설정 모두
-- 작업 화면 안의 미니 설정 패널
-- "고급 옵션" 토글로 같은 화면을 두 모드로 쓰기
+- Monitoring + mode switcher + settings on the same screen
+- A mini settings panel inside the work screen
+- "Advanced options" toggle that converts the same screen into two
+  different modes
 
 ```tsx
 // ❌
 <Screen>
   <Monitoring />
-  <ModeSelector />     {/* 운전 중 잘못 눌림 */}
+  <ModeSelector />     {/* mis-pressed during work */}
   <SettingsPanel />
 </Screen>
 
 // ✅
 <MonitoringScreen />
-{/* 모드 전환은 별도 화면, 명시적 진입 */}
+{/* Mode switching is a separate screen with explicit entry */}
 ```
 
 ---
 
-### 6. Easy to Answer (3초) — 작업 중 입력 최소화
+### 6. Easy to answer (3 sec) — minimize input during work
 
-**왜.** 작업 중 사용자가 답할 수 있는 시간은 3초다. 그 안에 답이 안
-나오면 질문이 잘못된 것이다. 자유 텍스트 입력은 운전 중 키보드 사용이
-불가하므로 원천 금지.
+**Why.** During work the user can answer in 3 seconds at most. Past
+that, the question is wrong. Free-text input is forbidden outright
+because keyboards are unusable while operating.
 
 **✅ Do**
-- 모든 confirm·모달은 OK/취소 같은 단순 선택
-- 다지선다는 2~3개 선택지까지
-- 미리 정의된 값 중 선택 (사전 등록·메뉴)
+- All confirms / modals are simple OK / cancel
+- Multiple choice up to 2–3 options
+- Choose from pre-defined values (registry / menu)
 
 **❌ Don't**
-- 자유 텍스트 입력 (작업명·메모 등은 작업 후 별도 화면)
-- 모호한 질문 ("계속 진행할까요?" — 무엇을?)
-- 5개 이상 선택지
+- Free-text input (work names, memos belong on a separate post-work screen)
+- Ambiguous prompts ("Continue?" — continue what?)
+- 5+ options
 
 ```tsx
 // ❌
 <Modal>
-  <Input placeholder="작업명을 입력하세요" />
+  <Input placeholder="Enter work name" />
 </Modal>
 
 // ✅
 <Modal>
   <RadioGroup>
-    <Radio value="A">A 구역</Radio>
-    <Radio value="B">B 구역</Radio>
+    <Radio value="A">Zone A</Radio>
+    <Radio value="B">Zone B</Radio>
   </RadioGroup>
 </Modal>
 ```
 
 ---
 
-### 7. Tap & Scroll (한 손) — 정밀 제스처 금지
+### 7. Tap & scroll (one hand) — no precision gestures
 
-**왜.** 진동 환경에서 정밀 슬라이더·작은 드래그는 의도치 않게 발생하거나
-의도한 값으로 안 멈춘다. 가로 스와이프는 흔들림으로 자주 오발생한다.
-세로 스크롤은 큰 영역에서 천천히 굴려도 동작하므로 진동 환경에서도 안전.
+**Why.** Under vibration, fine-grained sliders and small drags either
+trigger unintentionally or fail to land on the intended value.
+Horizontal swipe is especially prone to false-positive from machine
+shake. Vertical scroll, even when slow on a large area, works
+reliably because it's tolerant of jitter.
 
 **✅ Do**
-- +/- 버튼, 대형 다이얼, 스텝 입력
-- 세로 스크롤
-- 큰 토글 스위치 (단일 탭)
+- +/- buttons, large dials, step inputs
+- Vertical scroll
+- Large toggle switches (single tap)
 
 **❌ Don't**
-- 가로 스와이프 네비게이션
-- 정밀 슬라이더 (1px 단위)
-- 드래그-앤-드롭
+- Horizontal swipe navigation
+- Fine-grained sliders (1px step)
+- Drag-and-drop
 
 ```tsx
 // ❌
@@ -221,27 +234,28 @@ function MyButton(props) {
 
 ## Operational Context 3
 
-### 8. Status Persistence — 핵심 상태는 어디서나
+### 8. Status persistence — core state visible everywhere
 
-**왜.** 사용자는 끊임없이 "지금 이 기계 정상인가?"를 확인한다. 다른
-화면에 들어갔다는 이유로 핵심 상태(동작·연료·온도·압력·작업기 상태·
-자동 모드 ON·OFF)가 사라지면 사용자는 매번 메인 화면으로 돌아와야
-하고, 그 사이 이상이 발생해도 모른다.
+**Why.** The user is constantly checking "is this machine still OK?".
+If core state (engine state, fuel, temperature / pressure, implement
+state, auto-mode ON/OFF) disappears the moment a different screen
+opens, the user has to keep returning to the main screen — and any
+fault that develops in the meantime goes unnoticed.
 
 **✅ Do**
-- 모든 화면에 persistent status bar/strip
-- 핵심 지표 5~7개를 항상 노출
-- 이상 시 status bar에서 즉시 색·아이콘 변화
+- A persistent status bar / strip on every screen
+- 5–7 core indicators always visible
+- Color / icon change in the status bar the moment something goes wrong
 
 **❌ Don't**
-- 화면 진입 시 status bar 사라짐
-- 설정 화면에서 "전체 화면 모드"로 status 가림
-- 모니터링 화면에서만 보이는 핵심 상태
+- Status bar removed on screen entry
+- "Full screen mode" in settings hiding the status
+- Core state visible only on the monitoring screen
 
 ```tsx
 // ❌
 <Screen>
-  <SettingsForm />   {/* status bar 없음 */}
+  <SettingsForm />   {/* no status bar */}
 </Screen>
 
 // ✅
@@ -253,26 +267,27 @@ function MyButton(props) {
 
 ---
 
-### 9. Safety Override — 안전 알림은 모든 UI 위로
+### 9. Safety override — alerts above all UI
 
-**왜.** 충돌·과열·이상·인접 인원 감지 같은 안전 신호는 1초의 지연도
-용납되지 않는다. Toast로 띄우면 사용자가 다른 곳을 보고 있다가
-놓친다. 시끄러운 환경에서 음성만으로는 부족하고, 진동만으로도 부족하다.
-세 채널을 동시에 써야 한다.
+**Why.** Critical signals (collision / overheat / fault / nearby person
+detected) tolerate no delay. A toast is missed when the user is
+looking elsewhere. In a noisy environment audio alone is not enough,
+and haptic alone is not enough either. All three channels must fire
+together.
 
 **✅ Do**
-- 풀스크린 모달, 다른 모든 UI 차단
-- 시각 + 음성 + 햅틱 3중
-- 명시적 acknowledge 필요 (자동 사라짐 X)
+- Full-screen modal that blocks every other UI
+- Visual + audio + haptic, simultaneously
+- Explicit acknowledgement required (no auto-dismiss)
 
 **❌ Don't**
-- Toast로 안전 알림
-- 자동 dismiss
-- 무시·접기 가능한 배너
+- Toast for safety alerts
+- Auto-dismiss
+- Dismissible / collapsible banners
 
 ```tsx
 // ❌
-toast.error('인접 인원 감지')
+toast.error('Nearby person detected')
 
 // ✅
 <SafetyOverrideModal
@@ -282,32 +297,33 @@ toast.error('인접 인원 감지')
   haptic={true}
   requireAck={true}
 >
-  인접 인원 감지 — 즉시 정지
+  Nearby person detected — stop immediately
 </SafetyOverrideModal>
 ```
 
 ---
 
-### 10. Resumable — 중단·재개 잦음
+### 10. Resumable — interruptions are frequent
 
-**왜.** 작업은 외부 사유(연료·식사·구역 이동)로 자주 끊긴다. 사용자가
-"처음부터 다시" 하도록 강요하면 매번 5~10분의 재설정이 누적되어 하루
-수십 분의 시간이 사라진다. UI는 마지막 상태를 기억하고, 재진입 시 그
-지점부터 이어가게 해야 한다.
+**Why.** Work is interrupted frequently for external reasons (refuel,
+meal, zone change). If the UI forces the user to "start over",
+5–10 minutes of re-setup accumulate every time, totalling tens of
+lost minutes per day. The UI must remember the last state and let
+the user continue from where they left off.
 
 **✅ Do**
-- 진행률·모드·미완료 입력 보존 (로컬 + 디바이스 영속화)
-- 재진입 시 마지막 화면·마지막 단계로 자동 복귀
-- 명시적 "처음부터" 버튼은 별도 (한 번 더 confirm)
+- Persist progress / mode / partial input (in memory + on-device)
+- On re-entry, automatically return to the last screen / last step
+- Explicit "start over" button is separate (with one extra confirm)
 
 **❌ Don't**
-- 새로고침 시 전체 초기화
-- 미완료 폼이 사라짐
-- 작업 중 모달이 외부 사유로 닫히면 다시 1단계부터
+- Full reset on refresh
+- Partial form lost
+- Mid-work modal closed by an external cause restarts from step 1
 
 ```tsx
 // ❌
-const [step, setStep] = useState(1)  // 메모리에만
+const [step, setStep] = useState(1)  // memory only
 
 // ✅
 const [step, setStep] = usePersistedState('workflow.step', 1)

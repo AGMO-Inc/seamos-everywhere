@@ -1,196 +1,224 @@
 ---
 name: seamos-customui-react
 description: >
-  SeamOS CustomUI를 React + @seamos/ads (Agmo Design System)로 작성하는
-  표준 UI 스킬. 운영 중인 기계 위에서 동작하는 화면이라는 특수 환경(진동·
-  흔들림, 야외 직사광·저조도, 장갑 착용, 한 손 조작, 수~수십 시간 연속
-  작업)에 맞춘 사용자 경험 원칙(Core 7 + Operational Context 3)과 ADS
-  컴포넌트·토큰 사용 안내(MCP 기반)를 제공한다. 화면 구성·정보 우선순위·
-  컴포넌트 선택·터치 제스처·접근성 결정에 즉시 사용한다. 사용자가 자유
-  텍스트로 요청해도 본 스킬을 트리거: "CustomUI 만들어", "CustomUI에
-  버튼 추가", "토픽 데이터 화면에 보여줘", "모니터링 화면", "컨트롤 버튼",
+  Standard UI skill for building SeamOS CustomUI with React 18 +
+  TypeScript + @seamos/ads (Agmo Design System). Provides 10 user
+  experience principles (Core 7 + Operational Context 3) tailored for
+  the operating-machinery context (vibration, direct sunlight, gloved
+  hands, one-handed operation, multi-hour continuous work) and an
+  ADS component / token usage guide that delegates to the ADS MCP
+  server. Use it whenever the user is building, modifying, or making
+  decisions about a SeamOS CustomUI screen — layout, information
+  hierarchy, component selection, touch gestures, accessibility.
+  Triggers (Korean + English): "CustomUI 만들어", "CustomUI에 버튼
+  추가", "토픽 데이터 화면에 보여줘", "모니터링 화면", "컨트롤 버튼",
   "React로 SeamOS UI", "디자인 시스템 컴포넌트", "ADS 버튼/토글/입력",
   "@seamos/ads 사용", "ADS 토큰 색상", "build CustomUI screen",
   "add ADS button", "show topic data on screen", "use design system
   component", "react SeamOS UI", "ads tokens for color/spacing".
-  통신 프로토콜(포트 디스커버리, WebSocket frame 구조, REST 호출 base
-  URL, cloud-proxy correlation-id)은 본 스킬 범위 밖 — `seamos-customui-client`
-  스킬로 위임한다. SeamOS 외부 웹앱(마켓플레이스 대시보드 등)이나
-  백엔드(Java/C++) 코드는 다루지 않는다.
+  Out of scope (delegate elsewhere): communication protocol — port
+  discovery, WebSocket frame shapes, REST base URL, cloud-proxy
+  correlation-id — handled by `seamos-customui-client`. Non-SeamOS
+  web apps (marketplace dashboard, internal tools) and backend
+  (Java / C++) code are not covered.
 ---
 
 # SeamOS CustomUI React
 
-SeamOS 앱의 CustomUI를 **React 18 + TypeScript + `@seamos/ads`** 표준으로
-짜기 위한 스킬. 본 스킬은 두 가지를 제공한다.
+Skill for writing SeamOS app CustomUI as **React 18 + TypeScript +
+`@seamos/ads`**. The skill provides two things.
 
-1. **사용자 경험 원칙 10개** — 운영 중 기계 위에서 동작하는 화면이라는
-   특수 환경에 맞춘 강한 규약. 화면 구성·정보 우선순위·터치 제스처·
-   접근성 결정에 사용.
-2. **ADS 사용 안내** — `@seamos/ads`가 제공하는 토큰 카테고리와 ADS
-   MCP(`https://mcp.ads.seamos.io`) 호출 흐름. **컴포넌트 props·예제·
-   실제 토큰 값은 MCP가 진실의 출처**이며, 본 스킬은 추측 없이 MCP를
-   쓰도록 유도한다.
+1. **10 user experience principles** — strong rules tailored to the
+   operating-machinery environment. Use them when deciding screen
+   layout, information hierarchy, touch gestures, and accessibility.
+2. **ADS usage guide** — token categories that `@seamos/ads` ships
+   and the ADS MCP server (`https://mcp.ads.seamos.io`) call flow.
+   **Component props, examples, and actual token values are owned by
+   the MCP** — this skill only steers you toward calling the MCP
+   instead of guessing.
 
-통신(포트 디스커버리, WebSocket frame, REST, cloud-proxy)은 본 스킬
-범위 밖이며 `seamos-customui-client`가 책임진다. 본 스킬은 그 통신
-helper를 React hook으로 감싸 쓰는 패턴을 `references/react-patterns.md`에
-별도로 제공한다.
+Communication (port discovery, WebSocket frames, REST routes,
+cloud-proxy) is **out of scope** and lives in `seamos-customui-client`.
+This skill provides a thin layer on top: hook-shaped wrappers around
+those vanilla helpers, kept in `references/react-patterns.md`.
 
 ## Why
 
-CustomUI는 일반 웹앱이 아니다. **운영 중인 기계 위에서 사용자가 다른
-한 손으로 조작기를 잡은 채 보는 화면**이다. 진동, 흔들림, 직사광, 장갑,
-연속 작업의 누적 피로 — 이 모든 제약이 일반 웹 UX의 default 가정을
-무너뜨린다. 이 스킬의 원칙은 그 제약에서 역산한 결과다.
+CustomUI is not a generic web app. It is **a screen on a moving
+machine, viewed by an operator whose other hand is on a control lever
+the whole time**. Vibration, direct sunlight, gloves, the cumulative
+fatigue of multi-hour continuous work — every one of these breaks the
+default assumptions of normal web UX. The principles below are
+back-derived from those constraints.
 
-또한 ADS가 사내 표준 컴포넌트 라이브러리로 존재함에도, vanilla
-HTML/JS로 직접 짜는 사례가 늘어 일관성·접근성·테마 변경 비용이 깨질
-위험이 있다. **CustomUI = React + ADS = 표준**임을 본 스킬이 선언한다.
+ADS exists as the in-house standard component library, but vanilla
+HTML/JS authorship has been creeping back, threatening consistency,
+accessibility, and theme-change cost. **CustomUI = React + ADS** is
+the standard this skill declares.
 
-## 사용 환경 (모든 원칙의 전제)
+## Operating environment (premise of every principle)
 
-- 진동·흔들림이 있는 운영 중 기계
-- 야외 직사광 ↔ 저조도 양극단
-- 장갑 착용 (정밀 터치 어려움)
-- 한 손 조작 (다른 손은 항상 핸들·레버·조작기)
-- 수~수십 시간 연속 작업
+- Vibrating, moving machine surface
+- Outdoor direct sunlight ↔ dim conditions, both extremes
+- Gloved hands (precision touch is unreliable)
+- One-handed operation (the other hand is always on a wheel / lever / control)
+- Multi-hour to multi-day continuous use
 
-## 사용자 경험 원칙
+## User experience principles
 
-상세 + 코드 예시는 `references/ux-principles.md`. 안티 패턴 카탈로그는
-`references/ux-anti-patterns.md`.
+Detailed rationale + code examples in `references/ux-principles.md`.
+Anti-pattern catalog in `references/ux-anti-patterns.md`.
 
-### Core 7 — 운영 중 기계 UI 공통
+### Core 7 — common to any UI on a moving machine
 
-**1. Easy & Safe — 양손 UI 금지, 한 손으로 모두 가능**
-- ✅ 큰 단일 탭 타겟 (장갑 기준 최소 64dp)
-- ❌ 멀티 터치 제스처, 양손 가정 UI, 시선을 묶는 애니메이션·자동 스크롤
+**1. Easy & Safe — no two-handed UI, everything reachable with one hand**
+- ✅ Single large tap targets (minimum 64dp, gloved-hand baseline)
+- ❌ Multi-touch gestures, two-hand assumptions, motion that pulls the eye
+  (auto-scrolling text, bursty transitions)
 
-**2. Glanceability + 즉시 응답 — 시선 1~2초, 입력 응답 0.25초**
-- ✅ 고대비, 큰 글자, 색에 더해 형태·위치로도 구분
-- ❌ 옅은 색만으로 구분, 작은 글자, 응답 지연 (= 사용자 중복 입력)
+**2. Glanceability + immediate response — 1–2 sec read, 0.25 sec feedback**
+- ✅ High contrast, large type, meaning conveyed by shape / position
+  / icon as well as color
+- ❌ Light grey for disabled state (invisible in sunlight), color-only
+  status, slow input feedback (causes duplicate taps)
 
-**3. Consistency — ADS·SeamOS UI 표준 그대로**
-- ✅ ADS가 제공하는 아이콘·색·spacing 그대로
-- ❌ 임의 색상·아이콘 변형, 한 화면만의 special case 패턴
+**3. Consistency — follow ADS / SeamOS UI as-is**
+- ✅ Use ADS components, icons, colors, spacing as shipped
+- ❌ Wrap an ADS component to override its color / spacing, "this one
+  screen has a slightly different layout"
 
-**4. Simplicity in Content — 사용자 언어, 꼭 필요한 것만**
-- ✅ 작업 도메인의 자연어, 현재 흐름 직결 정보만, 매뉴얼 없이 시작
-- ❌ 시그널 이름·기술 약어 그대로 노출, 통계·로그를 모니터링 화면에 섞기
+**4. Simplicity in content — operator language, only what is needed**
+- ✅ Domain-natural terms used in the field, only information directly
+  tied to the current task, runnable with no manual
+- ❌ Raw signal names / CAN abbreviations / internal codes,
+  monitoring screen mixed with statistics and logs
 
-**5. One Thing Per Screen — 한 화면 한 목표**
-- ✅ 작업 모니터링·설정·캘리브레이션 화면 분리, 모드별 화면 분리
-- ❌ 한 화면에서 모드 전환 + 모니터링 + 설정을 다 하기
+**5. One thing per screen — single goal**
+- ✅ Monitoring / settings / calibration on separate screens, mode
+  (work / drive / standby) on separate screens
+- ❌ Mode switcher, monitoring, and settings stacked on the same
+  screen
 
-**6. Easy to Answer (3초) — 작업 중 입력 최소화**
-- ✅ OK/취소 같은 단순 confirm, 3초 안에 답 가능한 질문
-- ❌ 자유 텍스트 입력, 모호한 질문, 다중 선택지 + 긴 설명
+**6. Easy to answer (3 sec) — minimize input during work**
+- ✅ Plain OK / cancel confirms, questions answerable in 3 seconds
+- ❌ Free-text input (keyboard unusable while operating), ambiguous
+  prompts, more than 3 options at once
 
-**7. Tap & Scroll (한 손) — 정밀 제스처 금지**
-- ✅ +/- 버튼·대형 다이얼, 세로 스크롤
-- ❌ 가로 스와이프, 작은 슬라이더, 정밀 드래그
+**7. Tap & scroll (one hand) — no precision gestures**
+- ✅ +/- buttons, large dials, vertical scrolling
+- ❌ Horizontal swipe, fine-grained sliders, drag-and-drop
 
-### Operational Context 3 — 운영 환경 특화
+### Operational Context 3 — moving-machine specific
 
-**8. Status Persistence — 핵심 상태는 어디서나**
-- ✅ 동작/연료/온도·압력/작업기 상태/자동 모드 ON·OFF는 persistent status bar
-- ❌ 다른 화면 진입 시 핵심 상태가 사라지는 구조
+**8. Status persistence — core state visible everywhere**
+- ✅ Engine state, fuel, temperature / pressure, implement state,
+  auto-mode ON/OFF in a persistent status bar on every screen
+- ❌ Status bar disappears when entering settings or full-screen modes
 
-**9. Safety Override — 안전 알림은 모든 UI 위로**
-- ✅ 풀스크린 모달 + 시각/음성/햅틱 3중, 명시적 acknowledge 필요
-- ❌ Toast로 안전 알림, 자동 사라짐, 무시 가능한 배너
+**9. Safety override — alerts above all UI**
+- ✅ Full-screen modal that blocks every other UI, visual + audio +
+  haptic, explicit acknowledgement required
+- ❌ Toast for safety alerts, auto-dismiss, dismissible banners
 
-**10. Resumable — 중단·재개 잦음**
-- ✅ 마지막 상태 기억 후 복귀 — 진행률·모드·미완료 입력 보존
-- ❌ "처음부터 다시" 강제, 새로고침 시 전체 초기화
+**10. Resumable — interruptions are frequent**
+- ✅ Persist progress / mode / partial input across reloads, return to
+  last screen on re-entry
+- ❌ Full reset on refresh, partial form lost on interruption,
+  forced restart from step 1
 
-## ADS 사용 안내 (정보)
+## ADS usage guide (informational)
 
-`@seamos/ads`는 React 18 + TypeScript + CSS Variables 기반의 사내
-디자인 시스템. **실제 컴포넌트 props·사용 예제·CSS 변수 값은 ADS MCP가
-진실의 출처**이며, 본 스킬은 그것을 어떻게 호출할지만 안내한다.
+`@seamos/ads` is the in-house React 18 + TypeScript + CSS Variables
+design system. **The authoritative source for component props, usage
+examples, and CSS variable values is the ADS MCP server** — this skill
+only describes how to call it.
 
-### MCP 도구
+### MCP tools
 
-| 도구 | 용도 |
+| Tool | Use |
 |---|---|
-| `list_components` | 전체 컴포넌트 목록 — 어떤 컴포넌트가 있는지 조회 |
-| `search_components(query)` | 키워드 검색 — "토글 비슷한 것", "입력 필드" 등 |
-| `get_component(name)` | 특정 컴포넌트의 props·예제·사용하는 CSS 변수 |
+| `list_components` | Browse the full component list — what exists at all |
+| `search_components(query)` | Keyword search — "toggle-like component", "input field" |
+| `get_component(name)` | Specific component's props, examples, CSS variables it depends on |
 
-### 메타 가이드
+### Meta rules
 
-- **추측으로 props 작성 금지** — 사용 직전 `get_component(name)` 호출
-- **모르는 컴포넌트는 `search_components`부터** — 이름을 추측해 직접
-  import하지 말 것
-- ADS의 **강한 사용 규약**(Detachment 금지·토큰만 사용·접근성 default 등)
-  은 ADS 자체 문서가 책임지는 영역이며, 본 스킬은 정보 안내만 한다
+- **Do not write props from memory.** Call `get_component(name)` right
+  before using a component.
+- **Don't guess component names — search first.** If you're unsure of
+  the canonical name, run `search_components` rather than importing a
+  guessed identifier.
+- ADS's stronger usage rules (no detachment, tokens-only, accessibility
+  by default, etc.) are owned by ADS's own documentation. This skill
+  only points to the MCP and explains the categories.
 
-### 토큰 카테고리
+### Token categories
 
-ADS는 디자인 토큰을 CSS Variables (`--ads-*`) 형태로 제공한다. 실제
-이름·값은 MCP에서 가져온다. 카테고리는 다음과 같다.
+ADS exposes design tokens as CSS Variables (`--ads-*`). **Actual names
+and values come from the MCP.** The categories are:
 
-| 카테고리 | 변수 패턴 | 용도 |
+| Category | Variable pattern | Use |
 |---|---|---|
-| color | `var(--ads-color-*)` | 텍스트·배경·border·상태(success/warning/danger) 등 |
-| spacing | `var(--ads-spacing-*)` | margin·padding·gap |
-| typography | `var(--ads-font-*)`, `var(--ads-text-*)` | 폰트 크기·굵기·라인 높이 |
-| shadow | `var(--ads-shadow-*)` | elevation, focus ring |
+| color | `var(--ads-color-*)` | text · background · border · status (success/warning/danger) · brand |
+| spacing | `var(--ads-spacing-*)` | margin · padding · gap |
+| typography | `var(--ads-font-*)`, `var(--ads-text-*)` | font size · weight · line height |
+| shadow | `var(--ads-shadow-*)` | elevation · focus ring |
 | radius | `var(--ads-radius-*)` | border-radius |
-| motion | `var(--ads-motion-*)` | duration, easing |
+| motion | `var(--ads-motion-*)` | duration · easing |
 
-상세 + 사용 패턴은 `references/ads-tokens.md`.
+Detailed patterns in `references/ads-tokens.md`.
 
-## 통신 layer — `seamos-customui-client`
+## Communication layer — `seamos-customui-client`
 
-CustomUI의 **데이터 통신**(포트 디스커버리, WebSocket frame, REST,
-cloud-proxy)은 본 스킬 범위 밖이다. 별도 스킬에서 책임진다.
+The CustomUI's **data communication** (port discovery, WebSocket frame
+protocol, REST base URL, cloud-proxy) is out of scope here and is
+owned by another skill.
 
-- 통신 프로토콜·hard rule: `seamos-customui-client` SKILL.md
-- 그 helper들을 React hook으로 감싸 쓰는 패턴: `references/react-patterns.md`
-  (본 스킬 안의 hook 예시)
+- Protocol & hard rules: `seamos-customui-client` SKILL.md
+- React-hook wrappers around the same helpers:
+  `references/react-patterns.md` (this skill)
 
-## Workflow — 트리거 시 흐름
+## Workflow — when this skill is triggered
 
 ```
-사용자 의도 (예: "버튼 추가", "토픽 데이터 화면에 보여줘")
+User intent (e.g. "add a button", "show topic data on screen")
     ↓
-[1] 사용자 경험 원칙 체크
-    - 어떤 화면인가? (모니터링 / 설정 / 알림)
-    - 한 화면 한 목표? Status Persistence·Safety Override 적용?
-    - 작업 중 사용? → 큰 타겟·자유 텍스트 금지·자동 스크롤 금지
+[1] Apply UX principles
+    - What kind of screen is this? (monitoring / settings / alert)
+    - Single goal? Status persistence + safety override applicable?
+    - Used while operating? → large targets, no free text, no auto-scroll
     ↓
-[2] ADS MCP 조회
-    - 모르는 컴포넌트 → search_components(query)
-    - 사용 직전 → get_component(name)으로 props·예제·변수 확인
-    - 권장 사용 패턴 그대로 따른다 (Flat/Compound는 컴포넌트별 상이)
+[2] Query ADS via MCP
+    - Unknown component → search_components(query)
+    - Right before use → get_component(name) for props / examples / variables
+    - Follow the recommended pattern as returned (Flat vs Compound
+      varies per component — never enforced by this skill)
     ↓
-[3] 통신 필요 시 customui-client hook
+[3] If communication is needed, use customui-client hooks
     - useApiBase / useTopic / usePublish / useExternalApi
-    - 통신 프로토콜 자체는 customui-client 스킬 참조
+    - Communication protocol itself is owned by the customui-client skill
     ↓
-[4] 사용자 경험 원칙 위배 여부 최종 체크
-    - 안티 패턴 카탈로그(`references/ux-anti-patterns.md`)와 대조
-    - 토큰 하드코딩 여부 확인
+[4] Final pass against UX principles + anti-patterns
+    - Cross-check `references/ux-anti-patterns.md`
+    - Verify no hardcoded color / spacing values
     ↓
-코드 출력
+Output code
 ```
 
 ## Hard rules
 
-- **추측으로 ADS 컴포넌트 props 작성 금지.** `get_component`로 확인.
-- **토큰 값 하드코딩 금지.** 색상·spacing·typography는 `var(--ads-*)`
-  CSS Variable로만.
-- **자유 텍스트 입력 금지.** 운영 중 키보드 사용 불가.
-- **가로 스와이프·정밀 드래그 금지.** 진동에서 오발생.
-- **양손 UI 금지.** 다른 한 손은 항상 조작기 위에 있다.
+- **Never guess ADS component props.** Call `get_component`.
+- **Never hardcode token values.** Use `var(--ads-*)` CSS Variables for
+  color, spacing, typography.
+- **No free-text input.** Keyboards are unusable during operation.
+- **No horizontal swipe or precision drag.** Vibration causes false
+  positives.
+- **No two-handed UI.** The other hand is always on a control.
 
 ## Cross-references
 
-- 통신 프로토콜 (포트, WS frame, REST base URL, cloud-proxy):
+- Communication protocol (port, WS frame, REST base URL, cloud-proxy):
   `seamos-customui-client`
-- 백엔드 (Java/C++ REST·WebSocket 서버, DB, lifecycle):
+- Backend (Java / C++ REST · WebSocket server, DB, lifecycle):
   `seamos-app-framework`
-- 디자인 시스템 자체: ADS 레포 `https://github.com/AGMO-Inc/ADS`
+- Design system itself: ADS repo `https://github.com/AGMO-Inc/ADS`

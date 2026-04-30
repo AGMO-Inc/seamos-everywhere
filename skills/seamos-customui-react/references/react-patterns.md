@@ -1,26 +1,26 @@
-# React Patterns — customui-client helper의 hook 래핑
+# React Patterns — hook wrappers around customui-client helpers
 
-`seamos-customui-client` 스킬이 정의하는 vanilla helper(포트 디스커버리,
-WebSocket frame, REST 호출, cloud-proxy)를 React 18 + TypeScript에서
-hook으로 감싸 쓰는 패턴.
+Patterns for wrapping the vanilla helpers defined by the
+`seamos-customui-client` skill (port discovery, WebSocket frames,
+REST calls, cloud-proxy) as React 18 + TypeScript hooks.
 
-> **통신 프로토콜 자체(왜 relative URL인지, 4-frame WS의 정확한
-> shape, correlation-id 동작 등)는 본 문서 범위 밖이다 —
-> `seamos-customui-client` SKILL.md를 참조.**
+> **The communication protocol itself (why a relative URL, exact
+> shape of the four WS frames, correlation-id semantics) is out of
+> scope here — see `seamos-customui-client` SKILL.md.**
 
-본 문서는 **그 프로토콜 위에서 동작하는 React hook 형태의 사용 예시**
-만 제공한다.
+This file only provides **React-hook-shaped usage examples on top
+of that protocol**.
 
 ---
 
-## Hook 카탈로그
+## Hook catalog
 
-| Hook | 책임 | customui-client의 어디 |
+| Hook | Responsibility | Where in customui-client |
 |---|---|---|
-| `useApiBase()` | `get_assigned_ports` 호출 후 `http://hostname:port` base URL 반환 | port-discovery |
-| `useTopic(name)` | WS 토픽 구독, 마지막 frame 페이로드 반환 | ws-protocol (incoming `topic`) |
-| `usePublish()` | publish 헬퍼 — `readyState === OPEN` 체크 + 실패 처리 | ws-protocol (outgoing `publish`) |
-| `useExternalApi()` | cloud-proxy로 외부 HTTPS 호출, correlation-id 관리 | cloud-proxy |
+| `useApiBase()` | Call `get_assigned_ports`, return `http://hostname:port` base URL | port-discovery |
+| `useTopic(name)` | Subscribe to a WS topic, return last frame payload | ws-protocol (incoming `topic`) |
+| `usePublish()` | Publish helper — `readyState === OPEN` check, failure handling | ws-protocol (outgoing `publish`) |
+| `useExternalApi()` | Call external HTTPS via cloud-proxy with correlation-id | cloud-proxy |
 
 ---
 
@@ -39,7 +39,7 @@ export function useApiBase(): ApiBaseState {
 
   useEffect(() => {
     let cancelled = false
-    fetch('get_assigned_ports', { cache: 'no-store' })   // 반드시 relative URL
+    fetch('get_assigned_ports', { cache: 'no-store' })   // relative URL only
       .then(r => r.json())
       .then((ports: Record<string, string | number>) => {
         if (cancelled) return
@@ -59,7 +59,7 @@ export function useApiBase(): ApiBaseState {
 }
 ```
 
-### 사용
+### Usage
 
 ```tsx
 function CropList() {
@@ -67,20 +67,22 @@ function CropList() {
   if (api.status === 'loading') return <Skeleton />
   if (api.status === 'error') return <ErrorBanner error={api.error} />
 
-  // api.baseUrl, api.port 사용 — 앱 등록 REST 라우트는 이 base 위
+  // api.baseUrl, api.port — app-defined REST routes are on this base
   return <CropFetcher baseUrl={api.baseUrl} />
 }
 ```
 
-### 주의
+### Notes
 
-- **`get_assigned_ports`는 반드시 relative URL.** 앞에 `/`를 붙이면
-  feature prefix를 벗어나 404. (자세한 이유: customui-client SKILL.md)
-- 반환값은 보통 string이므로 `Number.parseInt` + `Number.isFinite` 검증.
+- **`get_assigned_ports` MUST be a relative URL.** Prepending `/`
+  escapes the feature prefix and 404s. (See customui-client SKILL.md
+  for why.)
+- The map values are usually strings — coerce with `Number.parseInt`
+  and validate with `Number.isFinite`.
 
 ---
 
-## 2. `useTopic(name)` — WS 토픽 구독
+## 2. `useTopic(name)` — WS topic subscription
 
 ```tsx
 import { useEffect, useRef, useState } from 'react'
@@ -105,13 +107,13 @@ export function useTopic<T>(topicName: string): T | undefined {
 
         ws.onmessage = (ev) => {
           const frame = JSON.parse(ev.data)
-          // customui-client SKILL.md ws-protocol.md 참고
+          // See customui-client SKILL.md → ws-protocol.md
           if (frame.type === 'topic' && frame.topic === topicName) {
             setData(frame.payload?.PL as T)
           }
         }
         ws.onopen = () => {
-          // 구독 메시지 (정확한 shape는 customui-client 문서)
+          // Subscribe message (exact shape: customui-client docs)
           ws.send(JSON.stringify({ type: 'subscribe', topic: topicName }))
         }
       })
@@ -127,28 +129,30 @@ export function useTopic<T>(topicName: string): T | undefined {
 }
 ```
 
-### 사용
+### Usage
 
 ```tsx
 function EngineRpm() {
   const rpm = useTopic<{ value: number }>('Engine.rpm')
-  return <Display label="엔진 회전수" value={rpm?.value ?? '—'} unit="rpm" />
+  return <Display label="Engine RPM" value={rpm?.value ?? '—'} unit="rpm" />
 }
 ```
 
-### 주의
+### Notes
 
-- **cleanup 필수**: 언마운트 시 `ws.close()`. 안 그러면 누수·중복 메시지.
-- `payload.PL` 파싱은 customui-client의 ws-protocol 규약을 그대로 따른다.
-- 앱이 재시작되면 ws가 silent close 되므로, 재연결 정책이 필요하면
-  여기에 reconnect 로직 추가 (지수 백오프 권장).
+- **Cleanup is required.** Call `ws.close()` on unmount, or you leak
+  sockets and get duplicate messages.
+- `payload.PL` parsing follows the customui-client ws-protocol contract.
+- The socket silently closes when the app restarts — if you need
+  reconnection, add a reconnect policy here (exponential backoff
+  recommended).
 
 ---
 
-## 3. `usePublish()` — publish 헬퍼
+## 3. `usePublish()` — publish helper
 
 ```tsx
-import { useCallback, useRef } from 'react'
+import { useCallback } from 'react'
 
 type PublishFn = (interfacePath: string, payload: unknown) => void
 
@@ -169,7 +173,7 @@ export function usePublish(ws: WebSocket | null): PublishFn {
 }
 ```
 
-### 사용
+### Usage
 
 ```tsx
 function ToggleValve({ ws }: { ws: WebSocket | null }) {
@@ -177,24 +181,24 @@ function ToggleValve({ ws }: { ws: WebSocket | null }) {
   return (
     <Button
       size="xl"
-      label="밸브 열기"
+      label="Open valve"
       onClick={() => publish('Implement.setAllSectionValveOpen', { open: true })}
     />
   )
 }
 ```
 
-### 주의
+### Notes
 
-- **`readyState === OPEN` 체크 필수.** 앱이 재시작되면 socket이
-  silent close되고, closed socket에 send하면 throw.
-- `interface` 필드는 FD가 생성하는 interface 경로 (예:
-  `Implement.setAllSectionValveOpen`). 정확한 값은 `seamos-plugins`
-  스킬의 interface 합성 결과를 참조.
+- **Always check `readyState === OPEN`.** When the app restarts the
+  socket silently closes; sending into a closed socket throws.
+- The `interface` field is the FD-generated interface path (e.g.
+  `Implement.setAllSectionValveOpen`). The exact path comes from the
+  `seamos-plugins` skill's interface synthesis result.
 
 ---
 
-## 4. `useExternalApi()` — cloud-proxy로 외부 HTTPS
+## 4. `useExternalApi()` — external HTTPS via cloud-proxy
 
 ```tsx
 import { useCallback, useEffect, useRef } from 'react'
@@ -238,7 +242,7 @@ export function useExternalApi(ws: WebSocket | null): ExternalApiCall {
 }
 ```
 
-### 사용
+### Usage
 
 ```tsx
 function CloudUploadButton({ ws }: { ws: WebSocket | null }) {
@@ -246,7 +250,7 @@ function CloudUploadButton({ ws }: { ws: WebSocket | null }) {
   return (
     <Button
       size="xl"
-      label="구름에 업로드"
+      label="Upload to cloud"
       onClick={async () => {
         const result = await callExternal({
           url: 'https://api.example.com/upload',
@@ -260,21 +264,23 @@ function CloudUploadButton({ ws }: { ws: WebSocket | null }) {
 }
 ```
 
-### 주의
+### Notes
 
-- **correlation-id 필수.** 같은 socket 위에서 여러 외부 호출이 돌면
-  응답이 out-of-order로 도착한다. cid로 매칭.
-- pending map 누수 방지를 위해 timeout도 함께 두는 것을 권장 (예제는
-  최소 형태).
-- 정확한 frame shape (`external_api_request` / `external_api_response`)는
-  customui-client SKILL.md의 cloud-proxy 섹션 참조.
+- **Correlation-id is required.** Multiple concurrent external calls
+  on the same socket will return out of order — match by cid.
+- Add a per-request timeout to prevent the pending map from leaking
+  (the example above is the minimum form).
+- The exact frame shape (`external_api_request` /
+  `external_api_response`) lives in the customui-client cloud-proxy
+  section.
 
 ---
 
-## 공통 권장 사항
+## Common recommendations
 
-- **상위에서 ws 인스턴스를 한 번만 만들고 context로 내려라.** 컴포넌트
-  마다 새 ws를 만들면 메시지 중복·연결 폭증.
-- **모든 hook이 unmount 시 cleanup**하는지 확인.
-- **에러 상태를 항상 노출**하라. silent failure는 운영 환경에서 가장
-  나쁜 패턴.
+- **Create the `ws` instance once at the top and pass it down via
+  context.** Spawning a new WebSocket per component creates duplicate
+  messages and connection storms.
+- **Every hook must clean up on unmount.**
+- **Always surface error states.** Silent failures are the worst
+  pattern in an operating-machinery environment.
