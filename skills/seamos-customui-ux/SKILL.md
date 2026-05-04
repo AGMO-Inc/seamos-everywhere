@@ -67,7 +67,9 @@ ADS component to "tweak" it.
 > *How* to use ADS — looking up components, reading props, picking
 > tokens — is owned by the **ADS MCP** (the canonical source of
 > truth for component API and token values). This skill does not
-> repeat that — it only declares the rule.
+> repeat that — it only declares the rule. Quick MCP usage reference
+> lives in `references/ads-mcp.md`; authoritative docs in the ADS
+> repo.
 
 ---
 
@@ -141,7 +143,8 @@ Detailed rationale + examples per principle in
 
 ## Cross-references
 
-- ADS components, props, token values, MCP usage: **ADS docs / ADS MCP**
+- ADS components, props, token values: **ADS docs / ADS MCP** (quick
+  MCP reference in `references/ads-mcp.md`)
 - Communication protocol (port discovery, WS frames, REST, cloud-proxy):
   `seamos-customui-client`
 - Backend (Java / C++ REST · WebSocket server, DB, lifecycle):
