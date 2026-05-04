@@ -4,8 +4,19 @@ How to query the **Agmo Design System (ADS) MCP server** to look up
 components, props, examples, and CSS variable values. ADS is the
 canonical source of truth — never write component props from memory.
 
-> This file is a quick reference. Authoritative documentation lives
-> in the ADS repo: `https://github.com/AGMO-Inc/ADS`.
+> This file is a quick reference. The official documentation site is
+> `https://ads.seamos.io`; source code, issues, and PRs live at
+> `https://github.com/AGMO-Inc/ADS`.
+
+## Endpoints at a glance
+
+| Resource | URL |
+|---|---|
+| Official docs site | `https://ads.seamos.io` |
+| MCP server (production) | `https://mcp.ads.seamos.io` |
+| MCP server (development) | `https://mcp.ads-dev.seamos.io` |
+| Source / issues / PR | `https://github.com/AGMO-Inc/ADS` |
+| npm package | `@seamos/ads` |
 
 ---
 
@@ -15,11 +26,8 @@ ADS ships with an MCP server that exposes component metadata over
 HTTP. Any AI tool (Claude Code, etc.) registered with the MCP can
 ask "what components exist?", "how is `Button` used?", "search for a
 toggle-like component" and get authoritative, up-to-date answers.
-
-| Environment | URL |
-|---|---|
-| Production | `https://mcp.ads.seamos.io` |
-| Development | `https://mcp.ads-dev.seamos.io` |
+Use **production** by default; switch to **development** only when
+deliberately testing pre-release components.
 
 ---
 
