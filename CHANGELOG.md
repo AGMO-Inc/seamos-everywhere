@@ -4,30 +4,30 @@ All notable changes to **seamos-everywhere** are documented here. Format follows
 
 ## [0.7.1] — 2026-05-06
 
-마켓플레이스 인증을 정적 `X-API-Key` 헤더에서 OAuth 2.1 (PKCE) 으로 전면 전환. MCP 호출은 Claude Code 의 표준 HTTP MCP 클라이언트가 RFC 9728 protected-resource metadata 챌린지를 받아 자동 OAuth 디스커버리 → 브라우저 로그인 → 토큰 캐시. multipart 업로드는 `create_app` / `update_app` MCP 응답에 동봉되는 1회용 `ut_*` 토큰을 `Authorization: Bearer` 로 사용 (5 분 TTL, single-use, appId 바인딩). 사용자 측 변화는 단순 — 첫 MCP 호출 시 브라우저로 SeamOS 로그인 1회, 이후 자동.
+Marketplace authentication switches from a static `X-API-Key` header to OAuth 2.1 (PKCE). MCP calls go through Claude Code's standard HTTP MCP client, which receives an RFC 9728 protected-resource-metadata challenge and runs OAuth discovery → browser login → token cache automatically. Multipart uploads use a one-time `ut_*` token returned in the `create_app` / `update_app` MCP responses, sent as `Authorization: Bearer` (5-minute TTL, single-use, bound to the appId). User-side change is minimal — a one-time browser login on the first MCP call, fully automatic afterward.
 
 ### Removed — Breaking
-- **`userConfig.seamos_api_key`** — `.claude-plugin/plugin.json` 에서 제거. plugin 설치 시 API key 입력 프롬프트가 사라진다.
-- **`mcpServers.seamos-marketplace.headers.X-API-Key`** — `mcp-servers.json` 에서 제거. URL 만 남는다.
-- **`upload.sh` / `update.sh` 의 `--api-key` 인자** — 제거. `--upload-token` 만 받는다.
-- **`setup` 스킬의 API key 입력 프롬프트** — 제거. setup 단계에서는 어떤 자격증명도 수집하지 않는다.
-- **`update.sh` 의 1회성 5xx retry 로직** — 제거. 1회용 업로드 토큰은 첫 호출에 consume 되어 재시도가 의미 없으므로, 사용자에게 스킬 재실행 (새 토큰 발급) 안내로 대체.
+- **`userConfig.seamos_api_key`** — removed from `.claude-plugin/plugin.json`. The plugin install prompt no longer asks for an API key.
+- **`mcpServers.seamos-marketplace.headers.X-API-Key`** — removed from `mcp-servers.json`. Only the URL remains.
+- **`--api-key` flag in `upload.sh` / `update.sh`** — removed. Only `--upload-token` is accepted.
+- **API key prompt in the `setup` skill** — removed. Setup itself collects no credentials.
+- **One-shot 5xx retry in `update.sh`** — removed. The single-use upload token is consumed by the first request, so a retry inside the script cannot succeed; the user is now guided to rerun the skill, which fetches a fresh token.
 
 ### Changed
-- **multipart 업로드 인증** — `upload.sh` / `update.sh` 가 `Authorization: Bearer ut_...` 로 전환. 마스킹 형식은 토큰 첫 6자 + `***` (예: `ut_abc***`).
-- **`upload-app` SKILL.md** — Step 1A 에서 `create_app` 응답의 `endpoint.authentication.uploadToken` 추출 → Step 4 에서 `--upload-token` 으로 전달.
-- **`update-app` SKILL.md** — Step 5 에 `5-0. Get one-time upload token` 단계 신설. 사용자 confirm 직후 `update_app` MCP 호출 → fresh 토큰 → 즉시 `update.sh` 실행. 5 분 만료 가드.
-- **`setup` 스킬** — `.mcp.json` 템플릿이 `args` 에서 `--header X-API-Key: ...` 페어를 더 이상 작성하지 않는다. stdio + `npx mcp-remote` + URL 만으로 충분 (mcp-remote 가 OAuth challenge 를 자동 처리).
-- **`seamos-common-rules.md` §1 — 토큰 마스킹 룰** — 마스킹 대상이 정적 API key 에서 1회용 upload token 으로. `sdm_ak_***` 예시 prefix 는 `ut_***` 로 갱신.
-- **`CLAUDE.md` / `README.md`** — Auth 안내가 OAuth (PKCE) + multipart upload token 으로 전면 갱신. "API Key 발급" / "환경변수로 secret 주입" 안내 제거.
+- **Multipart upload authentication** — `upload.sh` / `update.sh` now send `Authorization: Bearer ut_...`. Masking format is the first 6 characters of the token followed by `***` (e.g. `ut_abc***`).
+- **`upload-app` SKILL.md** — Step 1A extracts `endpoint.authentication.uploadToken` from the `create_app` response and passes it as `--upload-token` in Step 4.
+- **`update-app` SKILL.md** — new `5-0. Get one-time upload token` step. Right after user confirmation, the skill calls `update_app` to obtain a fresh token, then runs `update.sh` immediately. 5-minute expiry guard.
+- **`setup` skill** — the `.mcp.json` template no longer adds a `--header X-API-Key: ...` pair to `args`. stdio + `npx mcp-remote` + URL is sufficient (mcp-remote handles the OAuth challenge automatically).
+- **`seamos-common-rules.md` §1 — token masking rule** — masking target shifts from a static API key to a one-time upload token. The example prefix `sdm_ak_***` is replaced with `ut_***`.
+- **`CLAUDE.md` / `README.md`** — Auth guidance fully rewritten around OAuth (PKCE) + multipart upload tokens. "API key issuance" / "secret-via-env-var" guidance removed.
 
 ### Why
-sdm-backend#617 (`/mcp` OAuth Resource Server 전환) + sdm-backend#621 (`/v2/apps[/{id}/versions]` multipart 엔드포인트의 1회용 upload token 발급) 가 백엔드에 적용되며, plugin 측은 정적 API key 흐름을 들고 있을 이유가 사라졌다. OAuth 토큰은 Claude Code 가 캐시해 외부 bash 스크립트에 노출되지 않으므로, multipart 업로드는 MCP 응답에 동봉되는 short-lived token 으로 분리한다 (Claude Code 가 이미 인증된 컨텍스트에서 발급해 같은 사용자에게 forwarding). 결과적으로 사용자가 입력해야 할 시크릿이 0 개가 된다.
+sdm-backend#617 (`/mcp` OAuth Resource Server transition) and sdm-backend#621 (one-time upload token issuance for `/v2/apps[/{id}/versions]`) ship in the backend, removing any reason for the plugin to keep a static API key flow. OAuth tokens are cached by Claude Code and are not exposed to external bash scripts, so multipart uploads are split off into short-lived tokens embedded in the MCP response (Claude Code already holds an authenticated context and forwards them for the same user). The net effect is zero secrets a user has to enter.
 
 ### Migration
-- v0.7.0 사용자: plugin 업데이트 후 Claude Code 의 plugin 설정에서 `seamos_api_key` 항목이 사라진다 (자동 무시). 다음 마켓플레이스 MCP 호출 시 브라우저가 자동으로 열려 SeamOS 로그인 → 1 회 로그인 후 토큰 캐시.
-- 기존 project-scope `.mcp.json` 을 가진 사용자: `args` 의 `"--header"`, `"X-API-Key: ..."` 페어를 직접 삭제하거나 `setup --reconfigure` 재실행.
-- multipart 업로드 (upload-app / update-app) 호출 흐름은 사용자 입장에서 변화 없음 — 토큰 발급/소비/만료는 모두 plugin 내부에서 처리.
+- Users on v0.7.0: after updating, the `seamos_api_key` field disappears from the plugin settings panel (silently ignored). The next marketplace MCP call opens a browser for SeamOS login — log in once and the token is cached.
+- Users with an existing project-scope `.mcp.json`: delete the `"--header"`, `"X-API-Key: ..."` pair from `args` directly, or rerun `setup --reconfigure`.
+- Multipart upload flows (upload-app / update-app) are unchanged from the user's perspective — token issuance, consumption, and expiry are handled entirely inside the plugin.
 
 ## [0.7.0] — 2026-05-06
 
