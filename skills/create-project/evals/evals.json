@@ -80,5 +80,32 @@
       "stderr_contains": ["INVALID_OP"]
     },
     "timeout_ms": 10000
+  },
+  {
+    "name": "user_root_via_seamos_workspace_marker",
+    "description": "find_user_root resolves USER_ROOT when only .seamos-workspace.json marker exists (no .mcp.json). Validates the back-compat OR-marker patch (TODO 4.1).",
+    "input": {
+      "command": "bash skills/create-project/scripts/create-project.sh",
+      "args": [
+        "--project-name", "WSMarker",
+        "--skip-sdk-app",
+        "--workspace", "/tmp/seamos-eval-ws/WSMarker",
+        "--interface-json", "/Users/sungmincho/Desktop/Backend/seamos-everywhere/skills/create-project/references/interface-sample.json",
+        "--dry-run"
+      ],
+      "setup": {
+        "cwd": "/tmp/seamos-eval-ws",
+        "fixtures": [
+          "rm -rf /tmp/seamos-eval-ws",
+          "mkdir -p /tmp/seamos-eval-ws",
+          "printf '%s' '{\"schemaVersion\":1,\"createdAt\":\"2026-05-06T00:00:00Z\",\"scope\":\"project\",\"ui\":{\"defaultFramework\":null,\"activeSrcPath\":null,\"react\":{\"templateRepo\":\"https://github.com/AGMO-Inc/custom-ui-react-template\",\"templateRef\":\"main\"}},\"marketplace\":{\"endpoint\":\"dev\",\"endpointUrl\":\"https://dev.marketplace-api.seamos.io/mcp\"}}' > /tmp/seamos-eval-ws/.seamos-workspace.json"
+        ]
+      }
+    },
+    "expected": {
+      "exit_code": 0,
+      "stdout_contains": ["seamos-eval-ws", "WSMarker"]
+    },
+    "timeout_ms": 15000
   }
 ]

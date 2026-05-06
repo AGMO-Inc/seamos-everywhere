@@ -2,6 +2,24 @@
 
 All notable changes to **seamos-everywhere** are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [SemVer](https://semver.org/) (pre-1.0: minor bumps signal feature additions, patch bumps signal fixes).
 
+## [0.7.0] — 2026-05-06
+
+SeamOS 앱 개발의 첫 진입을 일관되게 만드는 두 신규 스킬(`setup`, `init-customui`)을 추가하고, USER_ROOT 마커를 `.mcp.json` 일원에서 새 마커 `.seamos-workspace.json` 로 분리. 기존 `create-project` 의 `find_user_root` 함수는 두 마커를 OR 로 인식하도록 1줄 패치(역호환). 두 가지 플러그인 설치 스코프(project / user)를 자동 감지해 산출물이 달라진다.
+
+### Added
+- **`setup` 스킬 신설** — SeamOS 1회용 환경 부트스트랩. `${USER_ROOT}/.seamos-workspace.json` (워크스페이스 마커 + UI prefs + marketplace endpoint) 작성, project scope 시 `${USER_ROOT}/.mcp.json` (stdio + npx mcp-remote, dev URL default) 도 작성, `seamos-assets/{builds,screenshots}/` 부트스트랩. 멱등 — 재실행 시 변경 없으면 모든 step `[skip]` 통과. `--workspace-dir`, `--endpoint dev|local|<URL>`, `--reconfigure`, `--non-interactive`, `--dry-run` 지원.
+- **`init-customui` 스킬 신설** — 앱마다 UI 폴더 scaffold. **vanilla** 모드는 `customui-src/` 를 만들지 않고 깊은 `ui/` 가 직접 작업 폴더(빌드 단계 없음). **react** 모드는 `${USER_ROOT}/${PROJECT}/customui-src/` 에 React 템플릿(`AGMO-Inc/custom-ui-react-template`) clone + `npm install` + deploy 출력 경로 자동 패치(vite.config 또는 package.json), 깊은 `ui/` 에 `.seamos-do-not-edit.md` 가드 마커 자동 생성. `--reset` 모드 전환 시 깊은 `ui/` 를 `ui.bak.{timestamp}/` 로 자동 백업. workspace JSON 의 `ui.activeSrcPath` 를 SSOT 로 갱신해 customui-* 친척 스킬이 한 필드만 보고 작업 위치를 결정.
+- **`shared-references/scripts/find-user-root.sh`** — USER_ROOT 마커 탐색 공유 lib (`.seamos-workspace.json` OR `.mcp.json`). sourceable + CLI 듀얼 인터페이스, `SEAMOS_ALLOW_PWD_FALLBACK=1` fallback.
+
+### Changed
+- **`create-project.find_user_root` — `.seamos-workspace.json` 도 마커로 인식 (back-compat OR 의미론, 1줄 패치)**. 기존 `.mcp.json` 동작 그대로 유지. WARN/ERROR 메시지 갱신 — `run 'setup' first or run inside a project that has either marker at its root`.
+- **`create-project` SKILL.md — "Next step: `init-customui`" callout** Stage 1C 직후 추가. orchestrator 가 자연 라우팅하는 의도 명시 (하드 체이닝 X).
+
+### Why
+디자인의 핵심 균열: 현재 `create-project` 는 `.mcp.json` 을 USER_ROOT 마커로 가정하는데, **마켓플레이스 user-scope 설치 시 플러그인이 MCP 를 자동 등록하므로 사용자 워크스페이스에 `.mcp.json` 이 존재할 이유가 사라진다**. 이 균열을 메우기 위해 마커를 `.seamos-workspace.json` 로 분리하고, MCP 설정과 워크스페이스 마커의 의미를 떼어냈다.
+
+UI 분기는 또 다른 빈자리였다: 현재 어떤 스킬도 vanilla / react UI 프레임워크 선택을 다루지 않았으며, React 빌드 산출물과 vanilla 작업 파일이 같은 깊은 `ui/` 폴더를 공유하면 agent / 사용자가 어디를 수정해야 할지 헷갈리는 인지 부하가 발생한다. 이를 해결하기 위해 `ui.activeSrcPath` 단일 SSOT 필드 + react 모드의 가드 마커 파일 패턴을 도입했다. `agmo:setup` 과의 트리거 충돌은 description 트리거 phrase 를 SeamOS 컨텍스트와 강결합해 회피했다(상세 — `skills/setup/references/trigger-design.md`).
+
 ## [0.6.3] — 2026-05-06
 
 PR #29 (`seamos-customui-ux` 스킬 신설 — UX 원칙 + ADS Foundation rule) 머지에 맞춰 v0.6.2 가 `seamos-customui-client` 에 추가했던 ADS 라우팅 본문을 `seamos-customui-ux` 로 이전. 두 스킬이 동일한 ADS hard rule 을 중복으로 외치는 상태(SSOT 위반)를 정리하고, 통신 vs 디자인 시스템 책임 분담을 명확화.

@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "seamos-marketplace": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "{ENDPOINT_URL}",
+        "--header",
+        "X-API-Key: {API_KEY}"
+      ]
+    }
+  }
+}

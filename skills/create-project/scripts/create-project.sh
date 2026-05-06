@@ -18,7 +18,7 @@ find_user_root() {
   local dir
   dir="$(pwd -P)"
   while true; do
-    if [[ -f "$dir/.mcp.json" ]]; then
+    if [[ -f "$dir/.seamos-workspace.json" || -f "$dir/.mcp.json" ]]; then
       echo "$dir"
       return 0
     fi
@@ -28,11 +28,11 @@ find_user_root() {
     dir="$(dirname "$dir")"
   done
   if [[ "${SEAMOS_ALLOW_PWD_FALLBACK:-0}" == "1" ]]; then
-    echo "WARN: no .mcp.json found from $PWD upward — using \$PWD as USER_ROOT (SEAMOS_ALLOW_PWD_FALLBACK=1)" >&2
+    echo "WARN: no .mcp.json or .seamos-workspace.json found from $PWD upward — using \$PWD as USER_ROOT (SEAMOS_ALLOW_PWD_FALLBACK=1)" >&2
     pwd -P
     return 0
   fi
-  echo "ERROR: no .mcp.json found from $PWD upward — run inside a project that has .mcp.json at its root" >&2
+  echo "ERROR: no .mcp.json or .seamos-workspace.json found from $PWD upward — run 'setup' first or run inside a project that has either marker at its root" >&2
   return 64
 }
 

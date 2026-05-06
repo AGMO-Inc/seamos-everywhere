@@ -1,0 +1,231 @@
+[
+  {
+    "name": "setup_project_scope_fresh",
+    "description": "Fresh project-scope bootstrap with --dry-run prints planned writes and STATUS_OK without mutating the workspace.",
+    "input": {
+      "command": "bash",
+      "args": [
+        "skills/setup/scripts/setup.sh",
+        "--workspace-dir",
+        "/tmp/setup-eval-fresh",
+        "--endpoint",
+        "dev",
+        "--non-interactive",
+        "--dry-run"
+      ],
+      "setup": {
+        "fixtures": [
+          { "type": "mkdir", "path": "/tmp/setup-eval-fresh" }
+        ]
+      }
+    },
+    "expected": {
+      "exit_code": 0,
+      "stdout_contains": [
+        "STATUS_OK",
+        "seamos-marketplace",
+        "[dry-run]"
+      ],
+      "stderr_contains": []
+    },
+    "timeout_ms": 10000
+  },
+  {
+    "name": "setup_project_scope_idempotent",
+    "description": "Second run with identical args after a successful first run reports [skip] for existing files and exits 0.",
+    "input": {
+      "command": "bash",
+      "args": [
+        "skills/setup/scripts/setup.sh",
+        "--workspace-dir",
+        "/tmp/setup-eval-idem",
+        "--endpoint",
+        "dev",
+        "--non-interactive"
+      ],
+      "setup": {
+        "fixtures": [
+          { "type": "mkdir", "path": "/tmp/setup-eval-idem" },
+          { "type": "mkdir", "path": "/tmp/setup-eval-idem/seamos-assets/builds" },
+          { "type": "mkdir", "path": "/tmp/setup-eval-idem/seamos-assets/screenshots" },
+          {
+            "type": "write",
+            "path": "/tmp/setup-eval-idem/.seamos-workspace.json",
+            "content": "{\n  \"schemaVersion\": 1,\n  \"createdAt\": \"2026-05-06T00:00:00Z\",\n  \"scope\": \"project\",\n  \"ui\": {\n    \"defaultFramework\": null,\n    \"activeSrcPath\": null,\n    \"react\": {\n      \"templateRepo\": \"https://github.com/AGMO-Inc/custom-ui-react-template\",\n      \"templateRef\": \"main\"\n    }\n  },\n  \"marketplace\": {\n    \"endpoint\": \"dev\",\n    \"endpointUrl\": \"https://dev.marketplace-api.seamos.io/mcp\"\n  }\n}\n"
+          },
+          {
+            "type": "write",
+            "path": "/tmp/setup-eval-idem/.mcp.json",
+            "content": "{\n  \"mcpServers\": {\n    \"seamos-marketplace\": {\n      \"type\": \"stdio\",\n      \"command\": \"npx\",\n      \"args\": [\n        \"mcp-remote\",\n        \"https://dev.marketplace-api.seamos.io/mcp\",\n        \"--header\",\n        \"X-API-Key: ${SEAMOS_API_KEY}\"\n      ]\n    }\n  }\n}\n"
+          }
+        ]
+      }
+    },
+    "expected": {
+      "exit_code": 0,
+      "stdout_contains": [
+        "STATUS_OK",
+        "[skip]"
+      ],
+      "stderr_contains": []
+    },
+    "timeout_ms": 10000
+  },
+  {
+    "name": "setup_user_scope_no_mcp_write",
+    "description": "When invoked through a wrapper under ~/.claude/plugins/, scope resolves to user and .mcp.json must not be written.",
+    "input": {
+      "command": "bash",
+      "args": [
+        "/tmp/setup-eval-userscope/.claude/plugins/fake-plugin/scripts/setup.sh",
+        "--workspace-dir",
+        "/tmp/setup-eval-userscope",
+        "--endpoint",
+        "dev",
+        "--non-interactive"
+      ],
+      "setup": {
+        "fixtures": [
+          { "type": "mkdir", "path": "/tmp/setup-eval-userscope" },
+          { "type": "mkdir", "path": "/tmp/setup-eval-userscope/.claude/plugins/fake-plugin/scripts" },
+          {
+            "type": "write",
+            "path": "/tmp/setup-eval-userscope/.claude/plugins/fake-plugin/scripts/setup.sh",
+            "content": "#!/usr/bin/env bash\nset -euo pipefail\nexec bash \"$(git rev-parse --show-toplevel 2>/dev/null || pwd)/skills/setup/scripts/setup.sh\" \"$@\"\n"
+          }
+        ]
+      }
+    },
+    "expected": {
+      "exit_code": 0,
+      "stdout_contains": [
+        "STATUS_OK",
+        "[user-scope] skipping .mcp.json",
+        "\"scope\": \"user\""
+      ],
+      "stderr_contains": []
+    },
+    "timeout_ms": 10000
+  },
+  {
+    "name": "setup_endpoint_local",
+    "description": "--endpoint local resolves to http://localhost:8088/mcp and is reflected in the generated .mcp.json output.",
+    "input": {
+      "command": "bash",
+      "args": [
+        "skills/setup/scripts/setup.sh",
+        "--workspace-dir",
+        "/tmp/setup-eval-local",
+        "--endpoint",
+        "local",
+        "--non-interactive"
+      ],
+      "setup": {
+        "fixtures": [
+          { "type": "mkdir", "path": "/tmp/setup-eval-local" }
+        ]
+      }
+    },
+    "expected": {
+      "exit_code": 0,
+      "stdout_contains": [
+        "STATUS_OK",
+        "http://localhost:8088/mcp"
+      ],
+      "stderr_contains": []
+    },
+    "timeout_ms": 10000
+  },
+  {
+    "name": "setup_reconfigure_existing",
+    "description": "Pre-existing .mcp.json with a different endpoint is preserved (skip + diff) when --reconfigure is not passed.",
+    "input": {
+      "command": "bash",
+      "args": [
+        "skills/setup/scripts/setup.sh",
+        "--workspace-dir",
+        "/tmp/setup-eval-reconfig",
+        "--endpoint",
+        "dev",
+        "--non-interactive"
+      ],
+      "setup": {
+        "fixtures": [
+          { "type": "mkdir", "path": "/tmp/setup-eval-reconfig" },
+          {
+            "type": "write",
+            "path": "/tmp/setup-eval-reconfig/.mcp.json",
+            "content": "{\n  \"mcpServers\": {\n    \"seamos-marketplace\": {\n      \"type\": \"stdio\",\n      \"command\": \"npx\",\n      \"args\": [\n        \"mcp-remote\",\n        \"http://localhost:8088/mcp\",\n        \"--header\",\n        \"X-API-Key: existing-placeholder\"\n      ]\n    }\n  }\n}\n"
+          }
+        ]
+      }
+    },
+    "expected": {
+      "exit_code": 0,
+      "stdout_contains": [
+        "STATUS_OK",
+        "[skip]",
+        "diff"
+      ],
+      "stderr_contains": []
+    },
+    "timeout_ms": 10000
+  },
+  {
+    "name": "setup_invalid_endpoint_value",
+    "description": "Custom endpoint values pass through verbatim — setup does not validate URL scheme; downstream auth surfaces errors.",
+    "input": {
+      "command": "bash",
+      "args": [
+        "skills/setup/scripts/setup.sh",
+        "--workspace-dir",
+        "/tmp/setup-eval-badep",
+        "--endpoint",
+        "ftp://bad",
+        "--non-interactive"
+      ],
+      "setup": {
+        "fixtures": [
+          { "type": "mkdir", "path": "/tmp/setup-eval-badep" }
+        ]
+      }
+    },
+    "expected": {
+      "exit_code": 0,
+      "stdout_contains": [
+        "STATUS_OK",
+        "ftp://bad"
+      ],
+      "stderr_contains": []
+    },
+    "timeout_ms": 10000
+  },
+  {
+    "name": "setup_missing_workspace_dir_pwd_fallback",
+    "description": "Without --workspace-dir and without any USER_ROOT marker, setup falls back to PWD and reports it as USER_ROOT.",
+    "input": {
+      "command": "bash",
+      "args": [
+        "skills/setup/scripts/setup.sh",
+        "--non-interactive",
+        "--dry-run"
+      ],
+      "cwd": "/tmp/setup-eval-pwd",
+      "setup": {
+        "fixtures": [
+          { "type": "mkdir", "path": "/tmp/setup-eval-pwd" }
+        ]
+      }
+    },
+    "expected": {
+      "exit_code": 0,
+      "stdout_contains": [
+        "STATUS_OK",
+        "setup-eval-pwd",
+        "USER_ROOT="
+      ],
+      "stderr_contains": []
+    },
+    "timeout_ms": 10000
+  }
+]

@@ -1,0 +1,273 @@
+[
+  {
+    "name": "init_vanilla_fresh",
+    "description": "Vanilla mode dry-run on a fresh fixture (workspace JSON defaultFramework=null, deep ui/ exists and empty) prints the planned writes and STATUS_OK without mutating anything.",
+    "input": {
+      "command": "bash",
+      "args": [
+        "skills/init-customui/scripts/init-customui.sh",
+        "--ui",
+        "vanilla",
+        "--non-interactive",
+        "--dry-run"
+      ],
+      "cwd": "/tmp/icu-eval-vfresh",
+      "setup": {
+        "fixtures": [
+          { "type": "mkdir", "path": "/tmp/icu-eval-vfresh/MyProj/MyProj/MyProj_App/ui" },
+          {
+            "type": "write",
+            "path": "/tmp/icu-eval-vfresh/.seamos-workspace.json",
+            "content": "{\n  \"schemaVersion\": 1,\n  \"createdAt\": \"2026-05-06T00:00:00Z\",\n  \"scope\": \"project\",\n  \"ui\": {\n    \"defaultFramework\": null,\n    \"activeSrcPath\": null,\n    \"react\": {\n      \"templateRepo\": \"https://github.com/AGMO-Inc/custom-ui-react-template\",\n      \"templateRef\": \"main\"\n    }\n  },\n  \"marketplace\": {\n    \"endpoint\": \"dev\",\n    \"endpointUrl\": \"https://dev.marketplace-api.seamos.io/mcp\"\n  }\n}\n"
+          },
+          {
+            "type": "write",
+            "path": "/tmp/icu-eval-vfresh/.seamos-context.json",
+            "content": "{\n  \"last_project\": {\n    \"name\": \"MyProj\",\n    \"app_project_name\": \"MyProj_App\",\n    \"app_project_path\": \"/tmp/icu-eval-vfresh/MyProj/MyProj/MyProj_App\"\n  }\n}\n"
+          }
+        ]
+      }
+    },
+    "expected": {
+      "exit_code": 0,
+      "stdout_contains": [
+        "STATUS_OK",
+        "[dry-run]",
+        "vanilla"
+      ],
+      "stderr_contains": []
+    },
+    "timeout_ms": 10000
+  },
+  {
+    "name": "init_react_fresh",
+    "description": "React mode dry-run on a fresh fixture previews the git clone + customui-src layout without performing any network calls.",
+    "input": {
+      "command": "bash",
+      "args": [
+        "skills/init-customui/scripts/init-customui.sh",
+        "--ui",
+        "react",
+        "--non-interactive",
+        "--dry-run"
+      ],
+      "cwd": "/tmp/icu-eval-rfresh",
+      "setup": {
+        "fixtures": [
+          { "type": "mkdir", "path": "/tmp/icu-eval-rfresh/MyProj/MyProj/MyProj_App/ui" },
+          {
+            "type": "write",
+            "path": "/tmp/icu-eval-rfresh/.seamos-workspace.json",
+            "content": "{\n  \"schemaVersion\": 1,\n  \"createdAt\": \"2026-05-06T00:00:00Z\",\n  \"scope\": \"project\",\n  \"ui\": {\n    \"defaultFramework\": null,\n    \"activeSrcPath\": null,\n    \"react\": {\n      \"templateRepo\": \"https://github.com/AGMO-Inc/custom-ui-react-template\",\n      \"templateRef\": \"main\"\n    }\n  },\n  \"marketplace\": {\n    \"endpoint\": \"dev\",\n    \"endpointUrl\": \"https://dev.marketplace-api.seamos.io/mcp\"\n  }\n}\n"
+          },
+          {
+            "type": "write",
+            "path": "/tmp/icu-eval-rfresh/.seamos-context.json",
+            "content": "{\n  \"last_project\": {\n    \"name\": \"MyProj\",\n    \"app_project_name\": \"MyProj_App\",\n    \"app_project_path\": \"/tmp/icu-eval-rfresh/MyProj/MyProj/MyProj_App\"\n  }\n}\n"
+          }
+        ]
+      }
+    },
+    "expected": {
+      "exit_code": 0,
+      "stdout_contains": [
+        "STATUS_OK",
+        "[dry-run]",
+        "git clone",
+        "customui-src"
+      ],
+      "stderr_contains": []
+    },
+    "timeout_ms": 10000
+  },
+  {
+    "name": "init_no_workspace_json",
+    "description": "Workspace JSON missing — init-customui exits 64 and the stderr message instructs the user to run setup first.",
+    "input": {
+      "command": "bash",
+      "args": [
+        "skills/init-customui/scripts/init-customui.sh",
+        "--ui",
+        "vanilla",
+        "--non-interactive"
+      ],
+      "cwd": "/tmp/icu-eval-nows",
+      "setup": {
+        "fixtures": [
+          { "type": "mkdir", "path": "/tmp/icu-eval-nows/MyProj/MyProj/MyProj_App/ui" },
+          {
+            "type": "write",
+            "path": "/tmp/icu-eval-nows/.seamos-context.json",
+            "content": "{\n  \"last_project\": {\n    \"name\": \"MyProj\",\n    \"app_project_name\": \"MyProj_App\",\n    \"app_project_path\": \"/tmp/icu-eval-nows/MyProj/MyProj/MyProj_App\"\n  }\n}\n"
+          }
+        ]
+      }
+    },
+    "expected": {
+      "exit_code": 64,
+      "stdout_contains": [],
+      "stderr_contains": [
+        "setup"
+      ]
+    },
+    "timeout_ms": 10000
+  },
+  {
+    "name": "init_no_context",
+    "description": "Workspace JSON exists but context JSON is missing and no --project-name/--app-project-name fallback is provided — exits 64 directing the user to create-project.",
+    "input": {
+      "command": "bash",
+      "args": [
+        "skills/init-customui/scripts/init-customui.sh",
+        "--ui",
+        "vanilla",
+        "--non-interactive"
+      ],
+      "cwd": "/tmp/icu-eval-noctx",
+      "setup": {
+        "fixtures": [
+          { "type": "mkdir", "path": "/tmp/icu-eval-noctx/MyProj/MyProj/MyProj_App/ui" },
+          {
+            "type": "write",
+            "path": "/tmp/icu-eval-noctx/.seamos-workspace.json",
+            "content": "{\n  \"schemaVersion\": 1,\n  \"createdAt\": \"2026-05-06T00:00:00Z\",\n  \"scope\": \"project\",\n  \"ui\": {\n    \"defaultFramework\": null,\n    \"activeSrcPath\": null,\n    \"react\": {\n      \"templateRepo\": \"https://github.com/AGMO-Inc/custom-ui-react-template\",\n      \"templateRef\": \"main\"\n    }\n  },\n  \"marketplace\": {\n    \"endpoint\": \"dev\",\n    \"endpointUrl\": \"https://dev.marketplace-api.seamos.io/mcp\"\n  }\n}\n"
+          }
+        ]
+      }
+    },
+    "expected": {
+      "exit_code": 64,
+      "stdout_contains": [],
+      "stderr_contains": [
+        "create-project"
+      ]
+    },
+    "timeout_ms": 10000
+  },
+  {
+    "name": "init_idempotent_react",
+    "description": "Workspace JSON already declares defaultFramework=react and customui-src/ exists — without --reset the script reports [skip] and exits 0.",
+    "input": {
+      "command": "bash",
+      "args": [
+        "skills/init-customui/scripts/init-customui.sh",
+        "--ui",
+        "react",
+        "--non-interactive"
+      ],
+      "cwd": "/tmp/icu-eval-iderx",
+      "setup": {
+        "fixtures": [
+          { "type": "mkdir", "path": "/tmp/icu-eval-iderx/MyProj/MyProj/MyProj_App/ui" },
+          { "type": "mkdir", "path": "/tmp/icu-eval-iderx/MyProj/customui-src" },
+          {
+            "type": "write",
+            "path": "/tmp/icu-eval-iderx/.seamos-workspace.json",
+            "content": "{\n  \"schemaVersion\": 1,\n  \"createdAt\": \"2026-05-06T00:00:00Z\",\n  \"scope\": \"project\",\n  \"ui\": {\n    \"defaultFramework\": \"react\",\n    \"activeSrcPath\": \"MyProj/customui-src\",\n    \"react\": {\n      \"templateRepo\": \"https://github.com/AGMO-Inc/custom-ui-react-template\",\n      \"templateRef\": \"main\"\n    }\n  },\n  \"marketplace\": {\n    \"endpoint\": \"dev\",\n    \"endpointUrl\": \"https://dev.marketplace-api.seamos.io/mcp\"\n  }\n}\n"
+          },
+          {
+            "type": "write",
+            "path": "/tmp/icu-eval-iderx/.seamos-context.json",
+            "content": "{\n  \"last_project\": {\n    \"name\": \"MyProj\",\n    \"app_project_name\": \"MyProj_App\",\n    \"app_project_path\": \"/tmp/icu-eval-iderx/MyProj/MyProj/MyProj_App\"\n  }\n}\n"
+          }
+        ]
+      }
+    },
+    "expected": {
+      "exit_code": 0,
+      "stdout_contains": [
+        "[skip]",
+        "STATUS_OK"
+      ],
+      "stderr_contains": []
+    },
+    "timeout_ms": 10000
+  },
+  {
+    "name": "init_reset_vanilla_to_react",
+    "description": "dry-run preview of vanilla->react reset, but --non-interactive forbids destructive transition unconditionally — exits 64 with destructive-transition stderr message.",
+    "input": {
+      "command": "bash",
+      "args": [
+        "skills/init-customui/scripts/init-customui.sh",
+        "--ui",
+        "react",
+        "--reset",
+        "--non-interactive",
+        "--dry-run"
+      ],
+      "cwd": "/tmp/icu-eval-rstvr",
+      "setup": {
+        "fixtures": [
+          { "type": "mkdir", "path": "/tmp/icu-eval-rstvr/MyProj/MyProj/MyProj_App/ui" },
+          {
+            "type": "write",
+            "path": "/tmp/icu-eval-rstvr/MyProj/MyProj/MyProj_App/ui/index.html",
+            "content": "<!doctype html><html><body><p>vanilla sample</p></body></html>\n"
+          },
+          {
+            "type": "write",
+            "path": "/tmp/icu-eval-rstvr/.seamos-workspace.json",
+            "content": "{\n  \"schemaVersion\": 1,\n  \"createdAt\": \"2026-05-06T00:00:00Z\",\n  \"scope\": \"project\",\n  \"ui\": {\n    \"defaultFramework\": \"vanilla\",\n    \"activeSrcPath\": \"MyProj/MyProj/MyProj_App/ui\",\n    \"react\": {\n      \"templateRepo\": \"https://github.com/AGMO-Inc/custom-ui-react-template\",\n      \"templateRef\": \"main\"\n    }\n  },\n  \"marketplace\": {\n    \"endpoint\": \"dev\",\n    \"endpointUrl\": \"https://dev.marketplace-api.seamos.io/mcp\"\n  }\n}\n"
+          },
+          {
+            "type": "write",
+            "path": "/tmp/icu-eval-rstvr/.seamos-context.json",
+            "content": "{\n  \"last_project\": {\n    \"name\": \"MyProj\",\n    \"app_project_name\": \"MyProj_App\",\n    \"app_project_path\": \"/tmp/icu-eval-rstvr/MyProj/MyProj/MyProj_App\"\n  }\n}\n"
+          }
+        ]
+      }
+    },
+    "expected": {
+      "exit_code": 64,
+      "stdout_contains": [],
+      "stderr_contains": [
+        "destructive"
+      ]
+    },
+    "timeout_ms": 10000
+  },
+  {
+    "name": "init_reset_non_interactive_destructive",
+    "description": "Real (non --dry-run) destructive vanilla->react transition under --non-interactive is fail-closed and exits 64 with destructive-transition stderr message.",
+    "input": {
+      "command": "bash",
+      "args": [
+        "skills/init-customui/scripts/init-customui.sh",
+        "--ui",
+        "react",
+        "--reset",
+        "--non-interactive"
+      ],
+      "cwd": "/tmp/icu-eval-rstni",
+      "setup": {
+        "fixtures": [
+          { "type": "mkdir", "path": "/tmp/icu-eval-rstni/MyProj/MyProj/MyProj_App/ui" },
+          {
+            "type": "write",
+            "path": "/tmp/icu-eval-rstni/MyProj/MyProj/MyProj_App/ui/index.html",
+            "content": "<!doctype html><html><body><p>vanilla sample</p></body></html>\n"
+          },
+          {
+            "type": "write",
+            "path": "/tmp/icu-eval-rstni/.seamos-workspace.json",
+            "content": "{\n  \"schemaVersion\": 1,\n  \"createdAt\": \"2026-05-06T00:00:00Z\",\n  \"scope\": \"project\",\n  \"ui\": {\n    \"defaultFramework\": \"vanilla\",\n    \"activeSrcPath\": \"MyProj/MyProj/MyProj_App/ui\",\n    \"react\": {\n      \"templateRepo\": \"https://github.com/AGMO-Inc/custom-ui-react-template\",\n      \"templateRef\": \"main\"\n    }\n  },\n  \"marketplace\": {\n    \"endpoint\": \"dev\",\n    \"endpointUrl\": \"https://dev.marketplace-api.seamos.io/mcp\"\n  }\n}\n"
+          },
+          {
+            "type": "write",
+            "path": "/tmp/icu-eval-rstni/.seamos-context.json",
+            "content": "{\n  \"last_project\": {\n    \"name\": \"MyProj\",\n    \"app_project_name\": \"MyProj_App\",\n    \"app_project_path\": \"/tmp/icu-eval-rstni/MyProj/MyProj/MyProj_App\"\n  }\n}\n"
+          }
+        ]
+      }
+    },
+    "expected": {
+      "exit_code": 64,
+      "stdout_contains": [],
+      "stderr_contains": [
+        "destructive"
+      ]
+    },
+    "timeout_ms": 10000
+  }
+]

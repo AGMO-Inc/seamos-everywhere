@@ -149,6 +149,8 @@ On successful exit, atomically upserts `last_project` in `$USER_ROOT/.seamos-con
 9. `mkdir -p $USER_ROOT/seamos-assets/{builds,screenshots}` (idempotent; no-op if present).
 10. Append the per-project sentinel block to `$USER_ROOT/.gitignore` (BEGIN/END pair validated; malformed state exits `2` with manual-repair guidance).
 
+> **Next step**: After Stage 1C completes, run `init-customui` to scaffold the per-app UI directory (vanilla or react). The orchestrator will route automatically when the user requests UI work.
+
 ## Resume Matrix
 
 Resume behavior is driven by `(workspace-exists, fsp_completed_at, sdk_app_completed_at)`:
