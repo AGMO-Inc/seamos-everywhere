@@ -33,15 +33,23 @@ deliberately testing pre-release components.
 
 ## Registration
 
-### One-line install
+### Within the `seamos-everywhere` plugin (auto-registered)
+
+The plugin's `mcp-servers.json` already declares the `ads` server (HTTP,
+no auth). Installing or enabling `seamos-everywhere` registers ADS MCP
+automatically — no extra command needed. This is the expected path for
+any work driven by this plugin.
+
+### Standalone (outside this plugin)
+
+If you want the ADS MCP in a Claude Code session that does NOT have the
+`seamos-everywhere` plugin enabled, register manually:
 
 ```bash
 claude mcp add --transport http ads https://mcp.ads.seamos.io/
 ```
 
-### Manual config
-
-Edit `~/.claude.json` or the project-level `.mcp.json`:
+Or edit `~/.claude.json` / a project-level `.mcp.json`:
 
 ```json
 {
@@ -54,8 +62,8 @@ Edit `~/.claude.json` or the project-level `.mcp.json`:
 }
 ```
 
-After registration, ADS appears in the MCP server list and the three
-tools below become callable.
+After registration (auto or manual), ADS appears in the MCP server list
+and the three tools below become callable.
 
 ---
 

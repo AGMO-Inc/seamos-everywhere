@@ -64,6 +64,27 @@ ADS component to "tweak" it.
 - ❌ Wrapping an ADS component to override its color or spacing
 - ❌ Local fork, detach, `!important` overrides
 
+### When the project's CustomUI is vanilla HTML/JS
+
+ADS ships React 18 components (Radix-based). Most SeamOS apps' CustomUI
+bundles in this codebase are vanilla HTML/JS, so you cannot drop
+`<Button />` in directly. The Foundation rule still applies — you just
+consume ADS through metadata instead of import:
+
+- **Query the ADS MCP first.** `get_component(name)` returns the prop
+  signature, the rendered DOM/class names, and the CSS variables the
+  component uses.
+- **Replicate the DOM + CSS variables** in your vanilla markup so the
+  result is visually identical to the React component. The CSS
+  variables ARE the design tokens — copying them onto vanilla elements
+  keeps you on the system, not off it.
+- **Still bound by every ban above.** No reinventing primitives, no
+  hardcoded colors / spacing outside ADS tokens, no local fork.
+  Vanilla is a rendering choice, not an opt-out from the system.
+
+If a project IS React-based, install `@seamos/ads` and use the
+components directly — never hand-roll equivalents.
+
 > *How* to use ADS — looking up components, reading props, picking
 > tokens — is owned by the **ADS MCP** (the canonical source of
 > truth for component API and token values). This skill does not
