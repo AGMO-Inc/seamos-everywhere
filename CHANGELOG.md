@@ -2,6 +2,20 @@
 
 All notable changes to **seamos-everywhere** are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [SemVer](https://semver.org/) (pre-1.0: minor bumps signal feature additions, patch bumps signal fixes).
 
+## [0.6.2] — 2026-05-06
+
+`@seamos/ads` (Agmo Design System) MCP 서버를 플러그인 매니페스트에 내장 등록 + `seamos-customui-client` 스킬에 ADS 라우팅 규칙을 추가. 플러그인 설치만으로 ADS 컴포넌트 카탈로그(props·CSS variables·예제)가 Claude Code 에 자동 연결되며, CustomUI 코드 작성 전 ADS 를 우선 조회하는 흐름이 스킬 본문에 강제된다. 이로써 SeamOS 앱 UI 의 시각적 일관성이 코드젠 단계에서 자동 확보된다.
+
+### Added
+
+- **`ads` MCP 서버 자동 등록** (`mcp-servers.json`) — `https://mcp.ads.seamos.io/` HTTP transport, 무인증. ADS 팀이 무인증 운영을 향후에도 유지하기로 합의. 도구: `list_components`, `get_component`, `search_components`.
+- **`seamos-customui-client` 스킬 — "Design system" 섹션 신규** — ADS 컴포넌트를 우선 조회하도록 강제하는 hard rule + Pattern selection 표 행 2 건 추가. CustomUI 가 vanilla HTML/JS 인 현실을 반영해, ADS React 컴포넌트를 그대로 못 쓰는 경우 **CSS variables + DOM 구조 + 클래스명 + 인터랙션 상태**를 `get_component` 예제로부터 복제하라는 가이드를 명시.
+
+### Notes — 의도적 비결정
+
+- `@seamos/ads` npm 의존성 자동 주입은 보류. 현재 CustomUI 가 대부분 vanilla 라 React 런타임을 강제하면 비용 대비 이득이 작음. React 기반 CustomUI 가 더 흔해지면 `create-project` 의 UI 템플릿에 시드하는 형태로 후속.
+- `ads` MCP 의 버전 핀 미적용. 카탈로그가 항상 최신 ADS 를 반영하므로 SeamOS 앱이 사용 중인 `@seamos/ads` 버전과 표류 가능. ADS MCP 가 `?version=` 헤더/쿼리를 제공하면 도입.
+
 ## [0.6.1] — 2026-04-30
 
 브랜드 일관성을 위해 MCP 설정·스킬·문서 전반의 `sdm` / `SDM` 표기를 `seamos` / `SeamOS` 로 일괄 정리. 이는 **breaking change** 로, plugin userConfig 키와 MCP 서버 이름이 변경되어 기존 설치 사용자는 키를 다시 설정해야 한다.

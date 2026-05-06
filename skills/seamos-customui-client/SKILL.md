@@ -107,12 +107,55 @@ and WebSocket.
 
 | Task | Read |
 |------|------|
-| First-time CustomUI scaffold | port-discovery.md → ws-protocol.md → full-example.html |
+| First-time CustomUI scaffold | port-discovery.md → ws-protocol.md → full-example.html → query `ads` MCP for visual primitives (see "Design system" below) |
 | "Show topic X live in the UI" | ws-protocol.md (incoming `topic` shape) |
 | "Add a button that toggles interface Y" | ws-protocol.md (outgoing `publish`) |
 | "UI needs to call my own REST endpoint (`/crops`, etc.)" | "REST routes use the same port" section above |
 | "UI needs to hit marketplace / cloud API" | cloud-proxy.md |
 | "Why does my fetch get 404?" | port-discovery.md (relative URL gotcha for `get_assigned_ports`); same-port section above (for app-defined REST routes) |
+| "What component should I use for X (Button / Toggle / Modal / ...)?" | `mcp__ads__search_components` then `mcp__ads__get_component` (see "Design system" below) |
+
+## Design system — `@seamos/ads` (ADS)
+
+CustomUI must visually match the rest of the SeamOS app surface. The `ads`
+MCP server is **auto-registered by this plugin** (HTTP, no auth) and
+exposes the AGMO Design System component catalog. **Query it before
+scaffolding any UI markup** — don't invent a Button when ADS already
+defines one.
+
+| Tool | Use it to |
+|------|-----------|
+| `mcp__ads__list_components` | See what's available before inventing your own |
+| `mcp__ads__search_components` | Find a component by intent: "toggle", "modal", "list" |
+| `mcp__ads__get_component` | Pull props, CSS variables, and usage examples for a specific component |
+
+### Vanilla HTML/JS vs `@seamos/ads`
+
+ADS ships React 18 components (Radix-based). CustomUI bundles in this
+codebase are typically **vanilla HTML/JS**, so you cannot drop `<Button />`
+in directly. What you reuse instead:
+
+- **CSS variables** — the ADS design tokens (colors, spacing, typography).
+  `get_component` returns the CSS variable names; copy them onto your
+  vanilla markup so the page matches the system.
+- **Visual structure** — replicate the DOM/class names the ADS component
+  renders (use `get_component` examples) so the result is visually
+  identical without a React runtime.
+- **Interaction states** — disabled / hover / focus / ARIA / keyboard
+  bindings as documented per component.
+
+If a CustomUI page is **React-based** (less common in this codebase),
+install `@seamos/ads` from npm and use the components directly rather than
+hand-rolling equivalents.
+
+### Hard rule
+
+- **Don't invent visual primitives.** If ADS has it (Button, Toggle,
+  Input, Modal, ListItem, …), use it — call `mcp__ads__search_components`
+  first, then either render the React component (React projects) or
+  replicate its DOM + CSS variables (vanilla projects). Hand-rolled
+  primitives drift visually from the rest of the SeamOS surface and are
+  the most common review-time rework.
 
 ## Hard rules
 

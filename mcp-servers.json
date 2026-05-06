@@ -6,6 +6,10 @@
       "headers": {
         "X-API-Key": "${user_config.seamos_api_key}"
       }
+    },
+    "ads": {
+      "type": "http",
+      "url": "https://mcp.ads.seamos.io/"
     }
   }
 }
