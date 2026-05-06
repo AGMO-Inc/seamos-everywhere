@@ -2,6 +2,20 @@
 
 All notable changes to **seamos-everywhere** are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [SemVer](https://semver.org/) (pre-1.0: minor bumps signal feature additions, patch bumps signal fixes).
 
+## [0.6.3] — 2026-05-06
+
+PR #29 (`seamos-customui-ux` 스킬 신설 — UX 원칙 + ADS Foundation rule) 머지에 맞춰 v0.6.2 가 `seamos-customui-client` 에 추가했던 ADS 라우팅 본문을 `seamos-customui-ux` 로 이전. 두 스킬이 동일한 ADS hard rule 을 중복으로 외치는 상태(SSOT 위반)를 정리하고, 통신 vs 디자인 시스템 책임 분담을 명확화.
+
+### Changed
+
+- **`seamos-customui-client` SKILL.md — Design system 섹션 제거, cross-ref 한 줄로 축약.** v0.6.2 가 추가했던 "Design system — `@seamos/ads` (ADS)" 섹션(Hard rule + vanilla fallback + ADS MCP 도구 표)을 통째로 삭제하고, "UI 디자인 시스템 규칙은 `seamos-customui-ux` 가 정의한다" 형태의 cross-reference 만 보존. Pattern selection 표의 "What component should I use for X" 행도 동일한 cross-ref 로 정리.
+- **`seamos-customui-ux` SKILL.md — vanilla CustomUI fallback 단락 흡수 (PR #29 PR-side fixup, 본 머지 commit 76761d9 에 squash 됨).** v0.6.2 가 명시했던 "vanilla 인 경우 CSS variables + DOM 구조 + 클래스명 복제" 가이드를 Foundation rule 직하위 sub-section 으로 이전. "vanilla 는 렌더링 선택일 뿐, 시스템 opt-out 이 아니다" 원칙을 명시.
+- **`seamos-customui-ux/references/ads-mcp.md` — Registration 섹션 톤 조정 (PR #29 PR-side fixup, 본 머지 commit 76761d9 에 squash 됨).** 무조건 "수동 등록" 으로 안내하던 본문을 "플러그인 내부에서는 자동 등록 / standalone 시에만 수동 등록" 두 단락으로 분리. v0.6.2 의 자동 등록 사실과 정합.
+
+### Why
+
+v0.6.2 와 PR #29 가 독립적으로 작성되며 **같은 ADS 메시지를 두 스킬에서 따로 외치고 vanilla 가이드/자동등록 사실이 모순**되는 상태를 해결. 책임 분담 — 통신 프로토콜은 `seamos-customui-client`, 디자인 시스템·UX 원칙은 `seamos-customui-ux`. PR #29 의 PR-side 보정 2 건은 PR 머지 commit 에 squash 흡수돼 있고, 본 패치는 master 측 `seamos-customui-client` 정리 + 버전 sync.
+
 ## [0.6.2] — 2026-05-06
 
 `@seamos/ads` (Agmo Design System) MCP 서버를 플러그인 매니페스트에 내장 등록 + `seamos-customui-client` 스킬에 ADS 라우팅 규칙을 추가. 플러그인 설치만으로 ADS 컴포넌트 카탈로그(props·CSS variables·예제)가 Claude Code 에 자동 연결되며, CustomUI 코드 작성 전 ADS 를 우선 조회하는 흐름이 스킬 본문에 강제된다. 이로써 SeamOS 앱 UI 의 시각적 일관성이 코드젠 단계에서 자동 확보된다.
