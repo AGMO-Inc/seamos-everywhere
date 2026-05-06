@@ -21,7 +21,7 @@ This skill does NOT use config.json. All version info is collected interactively
 
 ## Prerequisites
 
-1. `.mcp.json` at project root with `seamos-marketplace` server configured (API key with APP_DEPLOY scope)
+1. `.mcp.json` at project root with `seamos-marketplace` server configured. Authentication is OAuth (PKCE) — the first MCP call triggers a one-time browser login; no API key required.
 2. The app must already exist on the marketplace (use `upload-app` first)
 3. A `.fif` app package in `seamos-assets/builds/`
 
@@ -37,8 +37,7 @@ This skill only reads/writes `appId`, `appName`, and `updatedAt` — it preserve
 
 **A. Parse MCP config:**
 Read `.mcp.json` from project root. Extract:
-- `url` from `mcpServers.seamos-marketplace.url` — strip `/mcp` suffix to get base URL (e.g., `http://localhost:8088`)
-- `X-API-Key` from `mcpServers.seamos-marketplace.headers.X-API-Key`
+- `url` from `mcpServers.seamos-marketplace.url` — strip `/mcp` suffix to get base URL (e.g., `http://localhost:8088`). MCP-level OAuth token is managed by Claude Code automatically; no API key extraction is needed here. The one-time multipart `uploadToken` is fetched in Step 5 from `update_app`.
 
 **B. List user's apps:**
 Call `list_apps` MCP tool (`mcp__seamos-marketplace__list_apps`). This returns two groups:
@@ -220,6 +219,17 @@ Show full summary before proceeding:
 
 ### Step 5: Build and Execute
 
+#### 5-0. Get one-time upload token
+
+Call the `update_app` MCP tool (`mcp__seamos-marketplace__update_app`) with the selected `appId`. This returns the REST endpoint info plus a one-time multipart upload token bound to that `appId`:
+
+- `endpoint.authentication.uploadToken` — `ut_*` token, 5-minute TTL, single-use, scoped to this `appId`
+- `endpoint.authentication.uploadTokenExpiresAt` — ISO-8601 expiry
+
+Call this **immediately before** running `update.sh` so the token does not expire mid-flight. If the user pauses between confirmation and execution and the token has aged, simply call `update_app` again to obtain a fresh token.
+
+#### 5-1. Build request JSON
+
 The request JSON structure for update is fixed:
 ```json
 {
@@ -261,12 +271,14 @@ Assemble the request JSON using the values collected in Steps 3-4:
 }
 ```
 
-Execute the upload using the update script:
+#### 5-2. Execute upload
+
+Execute the upload using the update script. Pass the `uploadToken` from Step 5-0 — the script wraps it as `Authorization: Bearer ut_...`:
 
 ```bash
 bash skills/update-app/scripts/update.sh \
   --base-url "{base_url}" \
-  --api-key "{api_key}" \
+  --upload-token "{upload_token}" \
   --app-id {appId} \
   --request '{variants_json}' \
   --app-file "{feuType}" "{fif_path}"
@@ -277,7 +289,7 @@ bash skills/update-app/scripts/update.sh \
 ```bash
 bash skills/update-app/scripts/update.sh \
   --base-url "{base_url}" \
-  --api-key "{api_key}" \
+  --upload-token "{upload_token}" \
   --app-id {appId} \
   --request '{variants_json}' \
   --feu-type "{feuType}" \
@@ -286,22 +298,19 @@ bash skills/update-app/scripts/update.sh \
 
 `--feu-type` / `--fif` / `--arch` 는 `--app-file` 과 혼용 불가. `--arch` 만 주어지면 BUILD_DIR (기본 `./seamos-assets/builds`) 에서 `<ARCH>-*.fif` 단일 매칭을 찾아 사용 — 0 매칭 / 다중 매칭은 명시 에러.
 
-Do NOT build or display the curl command yourself — always use the script, which handles API key masking internally.
+Do NOT build or display the curl command yourself — always use the script, which handles upload-token masking internally.
 
 **If `--dry-run` argument was provided**: Run the script with `--dry-run` flag first to show what will be sent. Then ask the user if they want to proceed with the actual upload.
 
 ### Step 6: Report Result
 
 - **Success (2xx)**: Show response, confirm version was uploaded. Suggest running `get_app_status` to verify deployment status.
-- **Transient backend error (5xx, JPA, "Could not open EntityManager"): retry once automatically.**
-  The script (`update.sh`) already retries `5xx` and JPA-shaped error bodies once after a 2-second sleep before reporting failure. If the second attempt also fails, surface the original status code to the user with the guidance below.
-  Observed in practice: a fresh `update_app_on_device` / `versions` POST occasionally returns `Could not open JPA EntityManager for transaction` on first call right after the backend boots, then succeeds on retry. Do not surface the first transient as an error to the user — only the final outcome.
 - **Failure**: Show HTTP status + response body with fix suggestions:
-  - 401: API key invalid or missing APP_DEPLOY scope
-  - 403: Not the app owner (no WRITE permission)
+  - 401: upload token expired, already used, or malformed → call `update_app` again to get a fresh token, then retry within 5 minutes
+  - 403: Not the app owner (no WRITE permission), or token-to-app scope mismatch (server-side check) — re-run `update_app`
   - 400: Missing required field or invalid version format
   - 404: App ID not found
-  - 5xx (after retry): Server issue still persisting, suggest waiting and retrying manually
+  - 5xx: Backend transient — the upload token has already been consumed, so rerun the skill to get a fresh token and retry
 
 ### Cache Update
 

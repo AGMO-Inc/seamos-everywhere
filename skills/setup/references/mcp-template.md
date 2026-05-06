@@ -4,7 +4,9 @@ This document explains the project-scope `.mcp.json` template that `setup` write
 
 ## Why stdio + mcp-remote
 
-`setup` writes the project-scope MCP entry as a **stdio transport invoking `npx mcp-remote`** rather than a direct `type: http` entry. Three reasons drive this choice: (1) stdio is Claude Code's most reliable MCP transport for stateless Streamable HTTP backends that need custom headers — http-mode auth can be inconsistent across Claude Code versions, while stdio + `mcp-remote` is stable; (2) `mcp-remote` reliably proxies the `X-API-Key` header on every request, which `type: http` does not always pass cleanly through to the upstream server; (3) it intentionally diverges from the plugin's own user-scope `mcp-servers.json` (which uses `type: http` with `${user_config.*}` substitution because Claude Code's plugin install flow handles header injection there) — the two scopes solve different problems and the project-scope file must be self-contained without relying on `userConfig`.
+`setup` writes the project-scope MCP entry as a **stdio transport invoking `npx mcp-remote`** rather than a direct `type: http` entry. Two reasons drive this choice: (1) stdio is Claude Code's most reliable MCP transport for stateless Streamable HTTP backends — `type: http` auth has been inconsistent across Claude Code versions; (2) it intentionally diverges from the plugin's own user-scope `mcp-servers.json` (which uses `type: http` with `${user_config.*}` substitution because Claude Code's plugin install flow handles auth there) — the two scopes solve different problems and the project-scope file must be self-contained without relying on `userConfig`.
+
+The marketplace backend authenticates with OAuth 2.1 (PKCE). On the first request, `mcp-remote` receives a `401` with an RFC 9728 `WWW-Authenticate` challenge, runs OAuth discovery → PKCE → loopback redirect → browser login, and caches the access token locally for subsequent calls. No API key is sent.
 
 ## Endpoint options
 
@@ -16,14 +18,12 @@ This document explains the project-scope `.mcp.json` template that `setup` write
 
 Note: `setup` defaults to `dev`. Other endpoints are advanced — passed via `--endpoint local` or `--endpoint <URL>` flag. The resolved URL is substituted into the `{ENDPOINT_URL}` placeholder of the template.
 
-## API key sourcing
+## Authentication
 
-`setup` prompts the user for the marketplace API key, then substitutes the entered value into the `{API_KEY}` placeholder in the template. The substitution is purely textual — `setup` performs no validation or auth round-trip on the key.
+`setup` does not collect any credential. Authentication runs at MCP-call time:
 
-- `setup` prompts the user for the marketplace API key, then substitutes it into the `{API_KEY}` placeholder in the template.
-- If the user skips the prompt (presses Enter), the placeholder remains literally as `{API_KEY}` in the resulting `.mcp.json` — this is intentional. The user can edit `.mcp.json` manually later, or re-run `setup --reconfigure` to provide the key.
-- **No format validation.** `setup` does not check that the key matches `sdm_ak_*` or any other pattern. Reason: the marketplace backend's key format is not finalized; auth failure is reported by the backend on the first MCP call, not at setup time.
-- The API key is sensitive — the gitignored `.mcp.json` is the only on-disk location. Do not echo it to logs, do not commit it, do not embed it in scripts.
+- The first marketplace tool call (e.g. `list_apps`) triggers Claude Code → `mcp-remote` → OAuth (PKCE). A browser opens, the user signs in to SeamOS once, and the access token is cached.
+- Multipart uploads (`upload-app`, `update-app`) additionally fetch a one-time `ut_*` token from the `create_app` / `update_app` MCP responses and use it as `Authorization: Bearer ut_...` for the actual `POST /v2/apps[/{id}/versions]` request. The token is single-use and expires in 5 minutes — the upload scripts handle masking automatically.
 
 ## User scope vs Project scope
 
@@ -31,9 +31,9 @@ Note: `setup` defaults to `dev`. Other endpoints are advanced — passed via `--
 |---|---|---|
 | Plugin location | repo clone | `~/.claude/plugins/...` |
 | MCP registration | `setup` writes `${USER_ROOT}/.mcp.json` (this template) | Plugin auto-registers via `mcp-servers.json` + `userConfig` |
-| API key entry | `setup` prompt → `.mcp.json` substitution | Claude Code plugin install prompt → `userConfig.seamos_api_key` |
 | Server name | `seamos-marketplace` | `seamos-marketplace` (same) |
 | Transport | stdio + `npx mcp-remote` | http (direct) |
+| Auth bootstrap | first tool call → OAuth (PKCE) via `mcp-remote` | first tool call → OAuth (PKCE) via Claude Code's HTTP MCP client |
 
 Note: `setup` detects scope via `${BASH_SOURCE[0]}`. In user scope, `setup` does NOT write `.mcp.json` — it only verifies the plugin's auto-registration is in place and outputs guidance.
 
@@ -41,14 +41,4 @@ Note: `setup` detects scope via `${BASH_SOURCE[0]}`. In user scope, `setup` does
 
 Pre-v0.6.1 setups registered the marketplace MCP server under the legacy name `sdm-marketplace`. The current standard name is `seamos-marketplace`. `setup` detects the legacy entry and emits a migration suggestion, but does NOT auto-rename the entry — this is a user-controlled change to avoid breaking external scripts that may reference the old tool prefix `mcp__sdm-marketplace__*`.
 
-Before (deprecated, found in pre-v0.6.1 setups):
-```json
-{ "mcpServers": { "sdm-marketplace": { "type": "stdio", "command": "npx", "args": ["mcp-remote", "...", "--header", "X-API-Key: ..."] } } }
-```
-
-After (current):
-```json
-{ "mcpServers": { "seamos-marketplace": { "type": "stdio", "command": "npx", "args": ["mcp-remote", "...", "--header", "X-API-Key: ..."] } } }
-```
-
-To migrate manually: edit `${USER_ROOT}/.mcp.json`, rename the `sdm-marketplace` key to `seamos-marketplace`, restart Claude Code, and update any external scripts that still reference `mcp__sdm-marketplace__*` tool names.
+To migrate manually: edit `${USER_ROOT}/.mcp.json`, rename the `sdm-marketplace` key to `seamos-marketplace`, remove any extra header arguments from `args` (the marketplace authenticates via OAuth and does not require headers), restart Claude Code, and update any external scripts that still reference `mcp__sdm-marketplace__*` tool names.

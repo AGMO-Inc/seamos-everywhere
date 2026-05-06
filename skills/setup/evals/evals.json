@@ -56,7 +56,7 @@
           {
             "type": "write",
             "path": "/tmp/setup-eval-idem/.mcp.json",
-            "content": "{\n  \"mcpServers\": {\n    \"seamos-marketplace\": {\n      \"type\": \"stdio\",\n      \"command\": \"npx\",\n      \"args\": [\n        \"mcp-remote\",\n        \"https://dev.marketplace-api.seamos.io/mcp\",\n        \"--header\",\n        \"X-API-Key: ${SEAMOS_API_KEY}\"\n      ]\n    }\n  }\n}\n"
+            "content": "{\n  \"mcpServers\": {\n    \"seamos-marketplace\": {\n      \"type\": \"stdio\",\n      \"command\": \"npx\",\n      \"args\": [\n        \"mcp-remote\",\n        \"https://dev.marketplace-api.seamos.io/mcp\"\n      ]\n    }\n  }\n}\n"
           }
         ]
       }
@@ -155,7 +155,7 @@
           {
             "type": "write",
             "path": "/tmp/setup-eval-reconfig/.mcp.json",
-            "content": "{\n  \"mcpServers\": {\n    \"seamos-marketplace\": {\n      \"type\": \"stdio\",\n      \"command\": \"npx\",\n      \"args\": [\n        \"mcp-remote\",\n        \"http://localhost:8088/mcp\",\n        \"--header\",\n        \"X-API-Key: existing-placeholder\"\n      ]\n    }\n  }\n}\n"
+            "content": "{\n  \"mcpServers\": {\n    \"seamos-marketplace\": {\n      \"type\": \"stdio\",\n      \"command\": \"npx\",\n      \"args\": [\n        \"mcp-remote\",\n        \"http://localhost:8088/mcp\"\n      ]\n    }\n  }\n}\n"
           }
         ]
       }

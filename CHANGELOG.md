@@ -2,6 +2,33 @@
 
 All notable changes to **seamos-everywhere** are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [SemVer](https://semver.org/) (pre-1.0: minor bumps signal feature additions, patch bumps signal fixes).
 
+## [0.7.1] — 2026-05-06
+
+마켓플레이스 인증을 정적 `X-API-Key` 헤더에서 OAuth 2.1 (PKCE) 으로 전면 전환. MCP 호출은 Claude Code 의 표준 HTTP MCP 클라이언트가 RFC 9728 protected-resource metadata 챌린지를 받아 자동 OAuth 디스커버리 → 브라우저 로그인 → 토큰 캐시. multipart 업로드는 `create_app` / `update_app` MCP 응답에 동봉되는 1회용 `ut_*` 토큰을 `Authorization: Bearer` 로 사용 (5 분 TTL, single-use, appId 바인딩). 사용자 측 변화는 단순 — 첫 MCP 호출 시 브라우저로 SeamOS 로그인 1회, 이후 자동.
+
+### Removed — Breaking
+- **`userConfig.seamos_api_key`** — `.claude-plugin/plugin.json` 에서 제거. plugin 설치 시 API key 입력 프롬프트가 사라진다.
+- **`mcpServers.seamos-marketplace.headers.X-API-Key`** — `mcp-servers.json` 에서 제거. URL 만 남는다.
+- **`upload.sh` / `update.sh` 의 `--api-key` 인자** — 제거. `--upload-token` 만 받는다.
+- **`setup` 스킬의 API key 입력 프롬프트** — 제거. setup 단계에서는 어떤 자격증명도 수집하지 않는다.
+- **`update.sh` 의 1회성 5xx retry 로직** — 제거. 1회용 업로드 토큰은 첫 호출에 consume 되어 재시도가 의미 없으므로, 사용자에게 스킬 재실행 (새 토큰 발급) 안내로 대체.
+
+### Changed
+- **multipart 업로드 인증** — `upload.sh` / `update.sh` 가 `Authorization: Bearer ut_...` 로 전환. 마스킹 형식은 토큰 첫 6자 + `***` (예: `ut_abc***`).
+- **`upload-app` SKILL.md** — Step 1A 에서 `create_app` 응답의 `endpoint.authentication.uploadToken` 추출 → Step 4 에서 `--upload-token` 으로 전달.
+- **`update-app` SKILL.md** — Step 5 에 `5-0. Get one-time upload token` 단계 신설. 사용자 confirm 직후 `update_app` MCP 호출 → fresh 토큰 → 즉시 `update.sh` 실행. 5 분 만료 가드.
+- **`setup` 스킬** — `.mcp.json` 템플릿이 `args` 에서 `--header X-API-Key: ...` 페어를 더 이상 작성하지 않는다. stdio + `npx mcp-remote` + URL 만으로 충분 (mcp-remote 가 OAuth challenge 를 자동 처리).
+- **`seamos-common-rules.md` §1 — 토큰 마스킹 룰** — 마스킹 대상이 정적 API key 에서 1회용 upload token 으로. `sdm_ak_***` 예시 prefix 는 `ut_***` 로 갱신.
+- **`CLAUDE.md` / `README.md`** — Auth 안내가 OAuth (PKCE) + multipart upload token 으로 전면 갱신. "API Key 발급" / "환경변수로 secret 주입" 안내 제거.
+
+### Why
+sdm-backend#617 (`/mcp` OAuth Resource Server 전환) + sdm-backend#621 (`/v2/apps[/{id}/versions]` multipart 엔드포인트의 1회용 upload token 발급) 가 백엔드에 적용되며, plugin 측은 정적 API key 흐름을 들고 있을 이유가 사라졌다. OAuth 토큰은 Claude Code 가 캐시해 외부 bash 스크립트에 노출되지 않으므로, multipart 업로드는 MCP 응답에 동봉되는 short-lived token 으로 분리한다 (Claude Code 가 이미 인증된 컨텍스트에서 발급해 같은 사용자에게 forwarding). 결과적으로 사용자가 입력해야 할 시크릿이 0 개가 된다.
+
+### Migration
+- v0.7.0 사용자: plugin 업데이트 후 Claude Code 의 plugin 설정에서 `seamos_api_key` 항목이 사라진다 (자동 무시). 다음 마켓플레이스 MCP 호출 시 브라우저가 자동으로 열려 SeamOS 로그인 → 1 회 로그인 후 토큰 캐시.
+- 기존 project-scope `.mcp.json` 을 가진 사용자: `args` 의 `"--header"`, `"X-API-Key: ..."` 페어를 직접 삭제하거나 `setup --reconfigure` 재실행.
+- multipart 업로드 (upload-app / update-app) 호출 흐름은 사용자 입장에서 변화 없음 — 토큰 발급/소비/만료는 모두 plugin 내부에서 처리.
+
 ## [0.7.0] — 2026-05-06
 
 SeamOS 앱 개발의 첫 진입을 일관되게 만드는 두 신규 스킬(`setup`, `init-customui`)을 추가하고, USER_ROOT 마커를 `.mcp.json` 일원에서 새 마커 `.seamos-workspace.json` 로 분리. 기존 `create-project` 의 `find_user_root` 함수는 두 마커를 OR 로 인식하도록 1줄 패치(역호환). 두 가지 플러그인 설치 스코프(project / user)를 자동 감지해 산출물이 달라진다.

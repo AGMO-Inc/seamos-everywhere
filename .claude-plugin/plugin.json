@@ -1,7 +1,7 @@
 {
   "name": "seamos-everywhere",
   "description": "SeamOS AI Native developer plugin — build, test, and deploy agricultural machinery apps using natural language through Claude Code",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "author": {
     "name": "AGMO-Inc"
   },
@@ -10,15 +10,9 @@
   "skills": "./skills/",
   "mcpServers": "./mcp-servers.json",
   "userConfig": {
-    "seamos_api_key": {
-      "title": "SeamOS API Key",
-      "description": "SeamOS Marketplace API Key (APP_DEPLOY scope)",
-      "type": "string",
-      "sensitive": true
-    },
     "seamos_api_url": {
       "title": "SeamOS API URL",
-      "description": "SeamOS API base URL (e.g. https://marketplace-api.seamos.io)",
+      "description": "SeamOS API base URL (e.g. https://marketplace-api.seamos.io). 최초 MCP 호출 시 브라우저로 SeamOS 로그인 (OAuth PKCE) 1회 — API key 입력 불필요.",
       "type": "string",
       "sensitive": false
     }

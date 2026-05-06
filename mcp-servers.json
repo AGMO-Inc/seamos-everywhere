@@ -2,10 +2,7 @@
   "mcpServers": {
     "seamos-marketplace": {
       "type": "http",
-      "url": "${user_config.seamos_api_url}/mcp",
-      "headers": {
-        "X-API-Key": "${user_config.seamos_api_key}"
-      }
+      "url": "${user_config.seamos_api_url}/mcp"
     },
     "ads": {
       "type": "http",

@@ -6,7 +6,7 @@
 
 **Claude Code plugin for the SeamOS AI Native developer ecosystem**
 
-[![Version](https://img.shields.io/badge/version-0.6.3-blue.svg)](https://github.com/AGMO-Inc/seamos-everywhere/releases)
+[![Version](https://img.shields.io/badge/version-0.7.1-blue.svg)](https://github.com/AGMO-Inc/seamos-everywhere/releases)
 [![Skills](https://img.shields.io/badge/skills-12-orange.svg)](#skills)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey.svg)](LICENSE)
 [![Org](https://img.shields.io/badge/org-AGMO--Inc-green.svg)](https://github.com/AGMO-Inc)
@@ -26,7 +26,7 @@
 | Tool | Required | Notes |
 |------|----------|-------|
 | **Claude Code** | Yes | Anthropic official CLI |
-| **SeamOS API Key** | Yes | `APP_DEPLOY` scope required |
+| **SeamOS account** | Yes | First MCP call opens a browser for one-time SeamOS login (OAuth PKCE); no API key. |
 
 ## Installation
 
@@ -46,14 +46,13 @@ claude --plugin-dir ./seamos-everywhere
 
 ## Configuration
 
-After installation, configure your SeamOS credentials:
+After installation, configure the marketplace endpoint:
 
 | Key | Description |
 |-----|-------------|
 | `seamos_api_url` | SeamOS API base URL (e.g., `https://dev.marketplace-api.seamos.io`) |
-| `seamos_api_key` | API key with `APP_DEPLOY` scope |
 
-> **Security:** API keys are stored securely by Claude Code and never committed to the repository.
+The first marketplace MCP call (e.g., `list_apps`, `create_app`) triggers Claude Code's standard OAuth (PKCE) flow — a browser opens, you sign in to SeamOS once, and the access token is cached locally. Multipart uploads (`upload-app`, `update-app`) additionally use a one-time `ut_*` token issued per request by the backend.
 
 ---
 
