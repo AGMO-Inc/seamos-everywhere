@@ -138,28 +138,11 @@ write_mcp_json_project() {
     exit 65
   fi
 
-  # API key prompt.
-  local api_key=""
-  if [[ $NON_INTERACTIVE -eq 1 ]]; then
-    log "[skip] api key not provided — placeholder kept"
-  else
-    # POSIX read; macOS bash 3.2 compatible.
-    if [[ -t 0 ]]; then
-      printf 'Enter SeamOS marketplace API key (leave blank to keep placeholder): '
-      read -r api_key || api_key=""
-    else
-      log "[skip] non-tty — api key prompt skipped, placeholder kept"
-    fi
-  fi
-
   # Build the substituted JSON. Use python-free sed; URLs may contain '/', so use '|'.
+  # The marketplace backend authenticates via OAuth (PKCE) on the first MCP call —
+  # no API key collection at setup time.
   local rendered
-  if [[ -z "$api_key" ]]; then
-    rendered="$(sed -e "s|{ENDPOINT_URL}|$ENDPOINT_URL|g" "$TEMPLATE_MCP_JSON")"
-  else
-    rendered="$(sed -e "s|{ENDPOINT_URL}|$ENDPOINT_URL|g" \
-                    -e "s|{API_KEY}|$api_key|g" "$TEMPLATE_MCP_JSON")"
-  fi
+  rendered="$(sed -e "s|{ENDPOINT_URL}|$ENDPOINT_URL|g" "$TEMPLATE_MCP_JSON")"
 
   if [[ -f "$target" ]]; then
     # Detect deprecated key.
@@ -386,7 +369,7 @@ fi
 # ─── Step 7 — User-scope MCP guidance ──────────────────────────────────────
 if [[ "$SCOPE" == "user" ]]; then
   log "[user-scope] MCP server is auto-registered via plugin mcp-servers.json + userConfig."
-  log "[user-scope] If 'mcp__seamos-marketplace__*' tools are not visible, run /mcp in Claude Code to verify, or set seamos_api_key in plugin settings."
+  log "[user-scope] If 'mcp__seamos-marketplace__*' tools are not visible, run /mcp in Claude Code to verify. The first marketplace tool call opens a browser for one-time SeamOS login (OAuth)."
 fi
 
 # ─── Step 8 — Final status ─────────────────────────────────────────────────

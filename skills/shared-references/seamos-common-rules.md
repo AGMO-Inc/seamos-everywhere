@@ -2,15 +2,15 @@
 
 Shared rules and constraints for SeamOS MCP Server integration skills (upload-app, update-app, manage-device-app).
 
-## 1. API Key Masking
+## 1. Upload Token Masking
 
-When displaying any output to the user — including summaries, logs, debug info, command previews, or result reports — **ALWAYS mask the API key**.
+The marketplace multipart endpoints (`POST /v2/apps`, `POST /v2/apps/{id}/versions`) authenticate with a one-time upload token (`ut_*`, 5-minute TTL, single-use) returned by the `create_app` / `update_app` MCP tools, sent as `Authorization: Bearer ut_...`. When displaying any output to the user — summaries, logs, debug info, command previews, or result reports — **ALWAYS mask the token**.
 
-- **Display format**: Show only the first 6 characters followed by `***` (e.g., `sdm_ak_***`)
-- **Full key location**: The complete API key should appear only inside the actual curl execution within shell scripts (e.g., `upload.sh`, `update.sh`) — never in user-facing text
-- **No hardcoding**: NEVER hardcode API keys in commands shown to the user. Always read the API key from `.mcp.json` at runtime
+- **Display format**: Show only the first 6 characters followed by `***` (e.g., `ut_abc***`)
+- **Full token location**: The complete token should appear only inside the actual curl execution within shell scripts (`upload.sh`, `update.sh`) — never in user-facing text. The scripts mask `--upload-token` automatically in `--dry-run` output.
+- **No reuse, no hardcoding**: Tokens are obtained per-upload from the MCP response and consumed by the first request — never hardcode, log, or persist them.
 
-This rule applies across all steps: config parsing reports, command previews, and result reports.
+This rule applies across all steps: command previews, dry-run output, and result reports.
 
 ## 2. feuType Matching
 

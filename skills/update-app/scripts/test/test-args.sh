@@ -2,8 +2,8 @@
 #
 # test-args.sh — Argument parsing tests for update-app/scripts/update.sh
 #
-# Validates the new convenience flags introduced alongside the SKILL.md
-# argument-hint contract:
+# Validates the convenience flags that complement the SKILL.md argument-hint
+# contract:
 #   --feu-type FEU   — multipart part name (required when using convenience flags)
 #   --fif PATH       — explicit .fif path
 #   --arch ARCH      — resolve .fif by '<ARCH>-*.fif' in --build-dir
@@ -11,7 +11,7 @@
 #
 # Driven via --dry-run so no HTTP traffic. The dry-run output prints the
 # fully-assembled curl arg vector, which we grep for the synthesized
-# -F "feuType=@path" pair.
+# -F "feuType=@path" pair and for upload-token masking.
 #
 # Sandbox: all mock workspaces under mktemp -d /tmp/seamos-test-args-XXXXXX
 # and removed via trap on EXIT. No network. No user-home writes.
@@ -22,7 +22,7 @@ trap 'rm -rf "$TMPDIR"' EXIT
 
 UPDATE_SH="/Users/sungmincho/Desktop/Backend/seamos-everywhere/skills/update-app/scripts/update.sh"
 BASE_URL="http://localhost:8088"
-API_KEY="testkey123"
+UPLOAD_TOKEN="ut_testtoken456"
 APP_ID="10000"
 REQUEST_JSON='{"variants":[]}'
 
@@ -61,7 +61,7 @@ echo 'fakefif' > "$TMPDIR/builds/RCU4-3Q-20.fif"
 
 OUT_A=$(bash "$UPDATE_SH" \
   --base-url "$BASE_URL" \
-  --api-key "$API_KEY" \
+  --upload-token "$UPLOAD_TOKEN" \
   --app-id "$APP_ID" \
   --request "$REQUEST_JSON" \
   --feu-type "AUTO-IT_RV-C1000" \
@@ -74,7 +74,7 @@ assert_contains "(a) --feu-type + --fif synthesizes -F pair" "$OUT_A" \
 # ─── (b) --feu-type + --arch resolves .fif from --build-dir ─────────────────
 OUT_B=$(bash "$UPDATE_SH" \
   --base-url "$BASE_URL" \
-  --api-key "$API_KEY" \
+  --upload-token "$UPLOAD_TOKEN" \
   --app-id "$APP_ID" \
   --request "$REQUEST_JSON" \
   --feu-type "AUTO-IT_RV-C1000" \
@@ -91,7 +91,7 @@ echo 'fakefif2' > "$TMPDIR/builds/RCU4-3Q-21.fif"
 set +e
 OUT_C=$(bash "$UPDATE_SH" \
   --base-url "$BASE_URL" \
-  --api-key "$API_KEY" \
+  --upload-token "$UPLOAD_TOKEN" \
   --app-id "$APP_ID" \
   --request "$REQUEST_JSON" \
   --feu-type "AUTO-IT_RV-C1000" \
@@ -109,7 +109,7 @@ assert_contains "(c) --arch multi-match error message" "$OUT_C" \
 set +e
 OUT_D=$(bash "$UPDATE_SH" \
   --base-url "$BASE_URL" \
-  --api-key "$API_KEY" \
+  --upload-token "$UPLOAD_TOKEN" \
   --app-id "$APP_ID" \
   --request "$REQUEST_JSON" \
   --feu-type "AUTO-IT_RV-C1000" \
@@ -127,7 +127,7 @@ assert_contains "(d) --arch no-match error message" "$OUT_D" \
 set +e
 OUT_E=$(bash "$UPDATE_SH" \
   --base-url "$BASE_URL" \
-  --api-key "$API_KEY" \
+  --upload-token "$UPLOAD_TOKEN" \
   --app-id "$APP_ID" \
   --request "$REQUEST_JSON" \
   --feu-type "AUTO-IT_RV-C1000" \
@@ -145,7 +145,7 @@ assert_contains "(e) convenience + --app-file mutual exclusion message" "$OUT_E"
 set +e
 OUT_F=$(bash "$UPDATE_SH" \
   --base-url "$BASE_URL" \
-  --api-key "$API_KEY" \
+  --upload-token "$UPLOAD_TOKEN" \
   --app-id "$APP_ID" \
   --request "$REQUEST_JSON" \
   --feu-type "AUTO-IT_RV-C1000" \
@@ -161,7 +161,7 @@ assert_contains "(f) --feu-type alone error message" "$OUT_F" \
 set +e
 OUT_G=$(bash "$UPDATE_SH" \
   --base-url "$BASE_URL" \
-  --api-key "$API_KEY" \
+  --upload-token "$UPLOAD_TOKEN" \
   --app-id "$APP_ID" \
   --request "$REQUEST_JSON" \
   --fif "$TMPDIR/builds/RCU4-3Q-20.fif" \
@@ -173,29 +173,44 @@ assert "(g) --fif without --feu-type exit code" "$RC_G" "1"
 assert_contains "(g) --fif without --feu-type error message" "$OUT_G" \
   "--feu-type is required"
 
-# ─── (h) legacy --app-file path still works ─────────────────────────────────
+# ─── (h) --app-file path still works ─────────────────────────────────────────
 OUT_H=$(bash "$UPDATE_SH" \
   --base-url "$BASE_URL" \
-  --api-key "$API_KEY" \
+  --upload-token "$UPLOAD_TOKEN" \
   --app-id "$APP_ID" \
   --request "$REQUEST_JSON" \
   --app-file "AUTO-IT_RV-C1000" "$TMPDIR/builds/RCU4-3Q-20.fif" \
   --dry-run)
 
-assert_contains "(h) legacy --app-file path" "$OUT_H" \
+assert_contains "(h) --app-file path" "$OUT_H" \
   "AUTO-IT_RV-C1000=@$TMPDIR/builds/RCU4-3Q-20.fif"
 
-# ─── (i) API key masking in dry-run ─────────────────────────────────────────
-assert_contains "(i) API key masked in dry-run output" "$OUT_A" \
-  "${API_KEY:0:6}***"
+# ─── (i) upload token masking in dry-run ────────────────────────────────────
+assert_contains "(i) upload token masked in dry-run output" "$OUT_A" \
+  "Authorization: Bearer ${UPLOAD_TOKEN:0:6}***"
 
-# Negative: full API key should NOT appear after the masking marker.
-if echo "$OUT_A" | grep -q "X-API-Key: ${API_KEY}\b"; then
-  FAIL_LIST+=("(i) API key NOT masked")
+if echo "$OUT_A" | grep -q "Bearer ${UPLOAD_TOKEN}\b"; then
+  FAIL_LIST+=("(i) raw upload token leaked")
 else
-  echo "  ✓ (i) raw API key absent from dry-run output"
+  echo "  ✓ (i) raw upload token absent from dry-run output"
   PASS_COUNT=$((PASS_COUNT + 1))
 fi
+
+# ─── (j) missing --upload-token errors out ──────────────────────────────────
+set +e
+OUT_J=$(bash "$UPDATE_SH" \
+  --base-url "$BASE_URL" \
+  --app-id "$APP_ID" \
+  --request "$REQUEST_JSON" \
+  --feu-type "AUTO-IT_RV-C1000" \
+  --fif "$TMPDIR/builds/RCU4-3Q-20.fif" \
+  --dry-run 2>&1)
+RC_J=$?
+set -e
+
+assert "(j) missing --upload-token exit code" "$RC_J" "1"
+assert_contains "(j) missing --upload-token error message" "$OUT_J" \
+  "--upload-token is required"
 
 # ─── Summary ────────────────────────────────────────────────────────────────
 if [[ ${#FAIL_LIST[@]} -eq 0 ]]; then

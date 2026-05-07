@@ -37,8 +37,9 @@ REST/WebSocket code generation, testing, documentation, and UI development — g
 Wraps the seamos-backend API. Handles app publishing to the SeamOS marketplace.
 
 - Protocol: JSON-RPC 2.0, Stateless, Streamable HTTP
-- Auth: `X-API-Key` header
-- URL: configurable via environment/`.mcp.json`
+- Auth: OAuth 2.1 (PKCE) — Claude Code's standard HTTP MCP client discovers the authorization server via RFC 9728 protected-resource metadata, opens a browser for one-time SeamOS login, then caches the access token. No API key, no env var.
+- URL: configurable via `.mcp.json`
+- Multipart uploads (`/v2/apps`, `/v2/apps/{id}/versions`) authenticate with a one-time upload token (`ut_*`, 5-min TTL, single-use) returned by the `create_app` / `update_app` MCP tools.
 
 ## SeamOS MCP Tools
 
@@ -76,30 +77,27 @@ seamos-everywhere/
 
 ## MCP Configuration
 
-MCP servers are configured via `.mcp.json` at the project root. This file is **gitignored** because it contains user-specific API keys.
+MCP servers are configured via `.mcp.json` at the project root. The file is **gitignored** because it pins user-specific endpoints (dev / prod / local) and workspace state — not because it stores secrets. There are no static credentials to protect.
 
 ```json
 {
   "mcpServers": {
     "seamos-marketplace": {
-      "url": "http://localhost:8088/mcp",
-      "headers": {
-        "X-API-Key": "${SEAMOS_API_KEY}"
-      }
+      "url": "http://localhost:8088/mcp"
     }
   }
 }
 ```
 
 - The `url` field supports both local (`localhost`) and production deployments.
-- API keys must be provided via environment variables — never hardcoded.
+- The first MCP call triggers a one-time browser login (OAuth PKCE). The access token is cached by Claude Code and refreshed automatically.
 
 ## Development Principles
 
 - **Open-source first**: Designed for generic environments. No hardcoded secrets or org-specific paths.
 - **Configurable endpoints**: All MCP server URLs are user-configurable, not embedded in code.
-- **Environment variables for secrets**: Users supply API keys via env vars referenced in `.mcp.json`.
-- **Gitignore secrets**: `.mcp.json` must always remain in `.gitignore`.
+- **No static secrets**: Authentication is OAuth-based; the plugin never asks the user for an API key. Multipart uploads use one-time tokens issued per request by the backend.
+- **Gitignore workspace state**: `.mcp.json` and `.seamos-workspace.json` remain in `.gitignore` — they pin user-specific endpoints and paths.
 
 ## 레포/프로젝트 정보
 - 조직: AGMO-Inc

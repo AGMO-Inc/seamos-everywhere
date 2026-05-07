@@ -2,6 +2,33 @@
 
 All notable changes to **seamos-everywhere** are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [SemVer](https://semver.org/) (pre-1.0: minor bumps signal feature additions, patch bumps signal fixes).
 
+## [0.7.1] — 2026-05-06
+
+Marketplace authentication switches from a static `X-API-Key` header to OAuth 2.1 (PKCE). MCP calls go through Claude Code's standard HTTP MCP client, which receives an RFC 9728 protected-resource-metadata challenge and runs OAuth discovery → browser login → token cache automatically. Multipart uploads use a one-time `ut_*` token returned in the `create_app` / `update_app` MCP responses, sent as `Authorization: Bearer` (5-minute TTL, single-use, bound to the appId). User-side change is minimal — a one-time browser login on the first MCP call, fully automatic afterward.
+
+### Removed — Breaking
+- **`userConfig.seamos_api_key`** — removed from `.claude-plugin/plugin.json`. The plugin install prompt no longer asks for an API key.
+- **`mcpServers.seamos-marketplace.headers.X-API-Key`** — removed from `mcp-servers.json`. Only the URL remains.
+- **`--api-key` flag in `upload.sh` / `update.sh`** — removed. Only `--upload-token` is accepted.
+- **API key prompt in the `setup` skill** — removed. Setup itself collects no credentials.
+- **One-shot 5xx retry in `update.sh`** — removed. The single-use upload token is consumed by the first request, so a retry inside the script cannot succeed; the user is now guided to rerun the skill, which fetches a fresh token.
+
+### Changed
+- **Multipart upload authentication** — `upload.sh` / `update.sh` now send `Authorization: Bearer ut_...`. Masking format is the first 6 characters of the token followed by `***` (e.g. `ut_abc***`).
+- **`upload-app` SKILL.md** — Step 1A extracts `endpoint.authentication.uploadToken` from the `create_app` response and passes it as `--upload-token` in Step 4.
+- **`update-app` SKILL.md** — new `5-0. Get one-time upload token` step. Right after user confirmation, the skill calls `update_app` to obtain a fresh token, then runs `update.sh` immediately. 5-minute expiry guard.
+- **`setup` skill** — the `.mcp.json` template no longer adds a `--header X-API-Key: ...` pair to `args`. stdio + `npx mcp-remote` + URL is sufficient (mcp-remote handles the OAuth challenge automatically).
+- **`seamos-common-rules.md` §1 — token masking rule** — masking target shifts from a static API key to a one-time upload token. The example prefix `sdm_ak_***` is replaced with `ut_***`.
+- **`CLAUDE.md` / `README.md`** — Auth guidance fully rewritten around OAuth (PKCE) + multipart upload tokens. "API key issuance" / "secret-via-env-var" guidance removed.
+
+### Why
+sdm-backend#617 (`/mcp` OAuth Resource Server transition) and sdm-backend#621 (one-time upload token issuance for `/v2/apps[/{id}/versions]`) ship in the backend, removing any reason for the plugin to keep a static API key flow. OAuth tokens are cached by Claude Code and are not exposed to external bash scripts, so multipart uploads are split off into short-lived tokens embedded in the MCP response (Claude Code already holds an authenticated context and forwards them for the same user). The net effect is zero secrets a user has to enter.
+
+### Migration
+- Users on v0.7.0: after updating, the `seamos_api_key` field disappears from the plugin settings panel (silently ignored). The next marketplace MCP call opens a browser for SeamOS login — log in once and the token is cached.
+- Users with an existing project-scope `.mcp.json`: delete the `"--header"`, `"X-API-Key: ..."` pair from `args` directly, or rerun `setup --reconfigure`.
+- Multipart upload flows (upload-app / update-app) are unchanged from the user's perspective — token issuance, consumption, and expiry are handled entirely inside the plugin.
+
 ## [0.7.0] — 2026-05-06
 
 SeamOS 앱 개발의 첫 진입을 일관되게 만드는 두 신규 스킬(`setup`, `init-customui`)을 추가하고, USER_ROOT 마커를 `.mcp.json` 일원에서 새 마커 `.seamos-workspace.json` 로 분리. 기존 `create-project` 의 `find_user_root` 함수는 두 마커를 OR 로 인식하도록 1줄 패치(역호환). 두 가지 플러그인 설치 스코프(project / user)를 자동 감지해 산출물이 달라진다.

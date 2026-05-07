@@ -13,7 +13,7 @@ Upload a SeamOS app package (.fif) with metadata and assets to the SeamOS market
 ## Prerequisites
 
 Before running this skill, the user's project must have:
-1. `.mcp.json` at project root with `seamos-marketplace` server configured (API key with APP_DEPLOY scope)
+1. `.mcp.json` at project root with `seamos-marketplace` server configured. Authentication is OAuth (PKCE) — the first MCP call triggers a one-time browser login; no API key required.
 2. `seamos-assets/` directory at project root with the required files
 
 ## Asset Convention
@@ -42,13 +42,15 @@ Performance is critical — minimize user wait time and interaction rounds.
 
 Run these three operations simultaneously:
 
-**A. Get endpoint schema:**
-Call the `create_app` MCP tool (mcp__seamos-marketplace__create_app). This returns the REST endpoint schema with all required/optional parameters.
+**A. Get endpoint schema + one-time upload token:**
+Call the `create_app` MCP tool (mcp__seamos-marketplace__create_app). This returns:
+- the REST endpoint schema (all required/optional parameters)
+- `endpoint.authentication.uploadToken` — a 5-minute, one-time-use token (`ut_*`) bound to this user, used as `Authorization: Bearer <token>` on the multipart upload in Step 4
+- `endpoint.authentication.uploadTokenExpiresAt` — ISO-8601 expiry
 
 **B. Parse MCP config:**
 Read `.mcp.json` from the project root. Extract:
-- `url` from `mcpServers.seamos-marketplace.url` — strip the `/mcp` suffix to get the base URL (e.g., `http://localhost:8088`)
-- `X-API-Key` from `mcpServers.seamos-marketplace.headers.X-API-Key`
+- `url` from `mcpServers.seamos-marketplace.url` — strip the `/mcp` suffix to get the base URL (e.g., `http://localhost:8088`). The MCP-level OAuth token is managed by Claude Code automatically; no API key extraction is needed here.
 
 **C. Scan asset directory:**
 Scan `seamos-assets/` and categorize found files:
@@ -190,12 +192,12 @@ Wait for user confirmation before proceeding.
 
 ### Step 4: Build and Execute curl
 
-Assemble the multipart/form-data curl command using the script:
+Assemble the multipart/form-data curl command using the script. Pass the `uploadToken` from Step 1A (preferred). The token is one-time and expires in 5 minutes — call this script promptly after `create_app`.
 
 ```bash
 bash skills/upload-app/scripts/upload.sh \
   --base-url "{base_url}" \
-  --api-key "{api_key}" \
+  --upload-token "{upload_token}" \
   --request '{json_from_config}' \
   --main-image "{path}" \
   --icon-image "{path}" \
@@ -209,10 +211,11 @@ The `--request` JSON is built from config.json fields, mapped to the API schema 
 
 - **Success (2xx)**: Show the response body, confirm app was registered
 - **Failure**: Show HTTP status + response body, suggest fixes based on common errors:
-  - 401: API key invalid or missing APP_DEPLOY scope
+  - 401: upload token expired, already used, or malformed → call `create_app` again to get a fresh token, then retry within 5 minutes
+  - 403: token-to-app scope mismatch (server-side check) — re-run `create_app`
   - 400: Missing required field (show which one)
   - 413: File too large
-  - 5xx: Server issue, suggest retrying or checking server status
+  - 5xx: Server issue, suggest rerunning the skill (which will fetch a fresh token)
 
 ## Important Notes
 

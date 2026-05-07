@@ -2,7 +2,9 @@
 set -euo pipefail
 
 # SeamOS Marketplace App Upload Script
-# Uploads a SeamOS app package with metadata and assets via multipart/form-data
+# Uploads a SeamOS app package with metadata and assets via multipart/form-data.
+# Authenticates with a one-time upload token (ut_*) issued by the create_app
+# MCP tool — 5-minute TTL, single-use.
 
 usage() {
   cat <<EOF
@@ -10,7 +12,7 @@ Usage: $(basename "$0") [OPTIONS]
 
 Required:
   --base-url URL        SeamOS backend base URL (e.g., http://localhost:8088)
-  --api-key KEY         API key with APP_DEPLOY scope
+  --upload-token TOKEN  One-time upload token (ut_*) from create_app MCP tool
   --request JSON        App metadata as JSON string
   --main-image PATH     Path to main image file
   --icon-image PATH     Path to icon image file
@@ -25,7 +27,7 @@ EOF
 }
 
 BASE_URL=""
-API_KEY=""
+UPLOAD_TOKEN=""
 REQUEST_JSON=""
 MAIN_IMAGE=""
 ICON_IMAGE=""
@@ -35,11 +37,11 @@ DRY_RUN=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --base-url)   BASE_URL="$2"; shift 2 ;;
-    --api-key)    API_KEY="$2"; shift 2 ;;
-    --request)    REQUEST_JSON="$2"; shift 2 ;;
-    --main-image) MAIN_IMAGE="$2"; shift 2 ;;
-    --icon-image) ICON_IMAGE="$2"; shift 2 ;;
+    --base-url)      BASE_URL="$2"; shift 2 ;;
+    --upload-token)  UPLOAD_TOKEN="$2"; shift 2 ;;
+    --request)       REQUEST_JSON="$2"; shift 2 ;;
+    --main-image)    MAIN_IMAGE="$2"; shift 2 ;;
+    --icon-image)    ICON_IMAGE="$2"; shift 2 ;;
     --screenshots)
       shift
       while [[ $# -gt 0 && ! "$1" =~ ^-- ]]; do
@@ -56,7 +58,7 @@ done
 
 # Validation
 [[ -z "$BASE_URL" ]] && { echo "Error: --base-url is required"; exit 1; }
-[[ -z "$API_KEY" ]] && { echo "Error: --api-key is required"; exit 1; }
+[[ -z "$UPLOAD_TOKEN" ]] && { echo "Error: --upload-token is required"; exit 1; }
 [[ -z "$REQUEST_JSON" ]] && { echo "Error: --request is required"; exit 1; }
 [[ -z "$MAIN_IMAGE" ]] && { echo "Error: --main-image is required"; exit 1; }
 [[ -z "$ICON_IMAGE" ]] && { echo "Error: --icon-image is required"; exit 1; }
@@ -75,7 +77,7 @@ done
 CURL_ARGS=(
   curl -s -w "\n%{http_code}"
   -X POST "${BASE_URL}/v2/apps"
-  -H "X-API-Key: ${API_KEY}"
+  -H "Authorization: Bearer ${UPLOAD_TOKEN}"
   -F "request=${REQUEST_JSON};type=application/json"
   -F "mainImage=@${MAIN_IMAGE}"
   -F "iconImage=@${ICON_IMAGE}"
@@ -94,8 +96,9 @@ for ((i=0; i<${#APP_FILES[@]}; i+=2)); do
 done
 
 if $DRY_RUN; then
+  MASKED="${UPLOAD_TOKEN:0:6}***"
   echo "DRY RUN — would execute:"
-  printf '%q ' "${CURL_ARGS[@]}"
+  printf '%q ' "${CURL_ARGS[@]}" | sed "s|${UPLOAD_TOKEN}|${MASKED}|g"
   echo
   exit 0
 fi
