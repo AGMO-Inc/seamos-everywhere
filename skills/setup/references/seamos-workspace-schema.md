@@ -14,7 +14,7 @@
 | `ui.defaultFramework` | enum: `vanilla` \| `react` \| `null` | no | `null` | Workspace UI default; init-customui uses this when `--ui` is not given. |
 | `ui.activeSrcPath` | string (USER_ROOT-relative) \| `null` | no | `null` | **SSOT path for all customui-* skills.** vanilla → deep `ui/`, react → `<PROJECT>/customui-src/`. Updated by `init-customui`. |
 | `ui.react.templateRepo` | string (URL) | no | `https://github.com/AGMO-Inc/custom-ui-react-template` | Source of React scaffold. |
-| `ui.react.templateRef` | string | no | `main` | Branch / tag / SHA. |
+| `ui.react.templateRef` | string | no | `master` | Branch / tag / SHA. |
 | `marketplace.endpoint` | enum: `dev` \| `local` \| `custom` | yes | `dev` | Logical endpoint name. |
 | `marketplace.endpointUrl` | string (URL) | yes | `https://dev.marketplace-api.seamos.io/mcp` | Resolved URL written into `.mcp.json` template. |
 
@@ -30,7 +30,7 @@
     "activeSrcPath": "MyProj/MyProj/MyProj_App/ui",
     "react": {
       "templateRepo": "https://github.com/AGMO-Inc/custom-ui-react-template",
-      "templateRef": "main"
+      "templateRef": "master"
     }
   },
   "marketplace": {

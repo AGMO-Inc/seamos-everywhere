@@ -1,35 +1,35 @@
 {
-  "email": "sksjsksh22@gmail.com",
-  "phoneNumber": "010-1234-1234",
-  "categories": ["AGRICULTURE"],
-  "pricingType": "FREE | PAID",
-  "countries": [1],
-  "languages": [1],
+  "email": "",
+  "phoneNumber": "",
+  "categories": [],
+  "pricingType": "",
+  "countries": [],
+  "languages": [],
   "info": [
     {
-      "locale": "ko",
-      "appName": "egg collector",
-      "shortDescription": "달걀 감별",
-      "detailDescription": "달걀을 선별하고 선도를 판단합니다."
+      "locale": "",
+      "appName": "",
+      "shortDescription": "",
+      "detailDescription": ""
     }
   ],
   "variants": [
     {
-      "feuType": "AUTO-IT_RV-C1000, RCU4-3Q/20, RCU4-3X/10",
-      "version": "1.0.0",
+      "feuType": "",
+      "version": "",
       "isForTest": false,
       "info": [
         {
-          "locale": "ko",
-          "title": "업데이트",
-          "updateDescription": "업데이트 내용입니다."
+          "locale": "",
+          "title": "",
+          "updateDescription": ""
         }
       ]
     }
   ],
-  "price": 2.3,
-  "discount": 0.3,
-  "website": "http://test.com",
-  "videoUrl": "http://test.com",
+  "price": 0,
+  "discount": 0,
+  "website": "",
+  "videoUrl": "",
   "isForTest": false
 }

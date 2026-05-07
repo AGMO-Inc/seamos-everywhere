@@ -18,7 +18,7 @@
           {
             "type": "write",
             "path": "/tmp/icu-eval-vfresh/.seamos-workspace.json",
-            "content": "{\n  \"schemaVersion\": 1,\n  \"createdAt\": \"2026-05-06T00:00:00Z\",\n  \"scope\": \"project\",\n  \"ui\": {\n    \"defaultFramework\": null,\n    \"activeSrcPath\": null,\n    \"react\": {\n      \"templateRepo\": \"https://github.com/AGMO-Inc/custom-ui-react-template\",\n      \"templateRef\": \"main\"\n    }\n  },\n  \"marketplace\": {\n    \"endpoint\": \"dev\",\n    \"endpointUrl\": \"https://dev.marketplace-api.seamos.io/mcp\"\n  }\n}\n"
+            "content": "{\n  \"schemaVersion\": 1,\n  \"createdAt\": \"2026-05-06T00:00:00Z\",\n  \"scope\": \"project\",\n  \"ui\": {\n    \"defaultFramework\": null,\n    \"activeSrcPath\": null,\n    \"react\": {\n      \"templateRepo\": \"https://github.com/AGMO-Inc/custom-ui-react-template\",\n      \"templateRef\": \"master\"\n    }\n  },\n  \"marketplace\": {\n    \"endpoint\": \"dev\",\n    \"endpointUrl\": \"https://dev.marketplace-api.seamos.io/mcp\"\n  }\n}\n"
           },
           {
             "type": "write",
@@ -58,7 +58,7 @@
           {
             "type": "write",
             "path": "/tmp/icu-eval-rfresh/.seamos-workspace.json",
-            "content": "{\n  \"schemaVersion\": 1,\n  \"createdAt\": \"2026-05-06T00:00:00Z\",\n  \"scope\": \"project\",\n  \"ui\": {\n    \"defaultFramework\": null,\n    \"activeSrcPath\": null,\n    \"react\": {\n      \"templateRepo\": \"https://github.com/AGMO-Inc/custom-ui-react-template\",\n      \"templateRef\": \"main\"\n    }\n  },\n  \"marketplace\": {\n    \"endpoint\": \"dev\",\n    \"endpointUrl\": \"https://dev.marketplace-api.seamos.io/mcp\"\n  }\n}\n"
+            "content": "{\n  \"schemaVersion\": 1,\n  \"createdAt\": \"2026-05-06T00:00:00Z\",\n  \"scope\": \"project\",\n  \"ui\": {\n    \"defaultFramework\": null,\n    \"activeSrcPath\": null,\n    \"react\": {\n      \"templateRepo\": \"https://github.com/AGMO-Inc/custom-ui-react-template\",\n      \"templateRef\": \"master\"\n    }\n  },\n  \"marketplace\": {\n    \"endpoint\": \"dev\",\n    \"endpointUrl\": \"https://dev.marketplace-api.seamos.io/mcp\"\n  }\n}\n"
           },
           {
             "type": "write",
@@ -130,7 +130,7 @@
           {
             "type": "write",
             "path": "/tmp/icu-eval-noctx/.seamos-workspace.json",
-            "content": "{\n  \"schemaVersion\": 1,\n  \"createdAt\": \"2026-05-06T00:00:00Z\",\n  \"scope\": \"project\",\n  \"ui\": {\n    \"defaultFramework\": null,\n    \"activeSrcPath\": null,\n    \"react\": {\n      \"templateRepo\": \"https://github.com/AGMO-Inc/custom-ui-react-template\",\n      \"templateRef\": \"main\"\n    }\n  },\n  \"marketplace\": {\n    \"endpoint\": \"dev\",\n    \"endpointUrl\": \"https://dev.marketplace-api.seamos.io/mcp\"\n  }\n}\n"
+            "content": "{\n  \"schemaVersion\": 1,\n  \"createdAt\": \"2026-05-06T00:00:00Z\",\n  \"scope\": \"project\",\n  \"ui\": {\n    \"defaultFramework\": null,\n    \"activeSrcPath\": null,\n    \"react\": {\n      \"templateRepo\": \"https://github.com/AGMO-Inc/custom-ui-react-template\",\n      \"templateRef\": \"master\"\n    }\n  },\n  \"marketplace\": {\n    \"endpoint\": \"dev\",\n    \"endpointUrl\": \"https://dev.marketplace-api.seamos.io/mcp\"\n  }\n}\n"
           }
         ]
       }
@@ -163,7 +163,7 @@
           {
             "type": "write",
             "path": "/tmp/icu-eval-iderx/.seamos-workspace.json",
-            "content": "{\n  \"schemaVersion\": 1,\n  \"createdAt\": \"2026-05-06T00:00:00Z\",\n  \"scope\": \"project\",\n  \"ui\": {\n    \"defaultFramework\": \"react\",\n    \"activeSrcPath\": \"MyProj/customui-src\",\n    \"react\": {\n      \"templateRepo\": \"https://github.com/AGMO-Inc/custom-ui-react-template\",\n      \"templateRef\": \"main\"\n    }\n  },\n  \"marketplace\": {\n    \"endpoint\": \"dev\",\n    \"endpointUrl\": \"https://dev.marketplace-api.seamos.io/mcp\"\n  }\n}\n"
+            "content": "{\n  \"schemaVersion\": 1,\n  \"createdAt\": \"2026-05-06T00:00:00Z\",\n  \"scope\": \"project\",\n  \"ui\": {\n    \"defaultFramework\": \"react\",\n    \"activeSrcPath\": \"MyProj/customui-src\",\n    \"react\": {\n      \"templateRepo\": \"https://github.com/AGMO-Inc/custom-ui-react-template\",\n      \"templateRef\": \"master\"\n    }\n  },\n  \"marketplace\": {\n    \"endpoint\": \"dev\",\n    \"endpointUrl\": \"https://dev.marketplace-api.seamos.io/mcp\"\n  }\n}\n"
           },
           {
             "type": "write",
@@ -208,7 +208,7 @@
           {
             "type": "write",
             "path": "/tmp/icu-eval-rstvr/.seamos-workspace.json",
-            "content": "{\n  \"schemaVersion\": 1,\n  \"createdAt\": \"2026-05-06T00:00:00Z\",\n  \"scope\": \"project\",\n  \"ui\": {\n    \"defaultFramework\": \"vanilla\",\n    \"activeSrcPath\": \"MyProj/MyProj/MyProj_App/ui\",\n    \"react\": {\n      \"templateRepo\": \"https://github.com/AGMO-Inc/custom-ui-react-template\",\n      \"templateRef\": \"main\"\n    }\n  },\n  \"marketplace\": {\n    \"endpoint\": \"dev\",\n    \"endpointUrl\": \"https://dev.marketplace-api.seamos.io/mcp\"\n  }\n}\n"
+            "content": "{\n  \"schemaVersion\": 1,\n  \"createdAt\": \"2026-05-06T00:00:00Z\",\n  \"scope\": \"project\",\n  \"ui\": {\n    \"defaultFramework\": \"vanilla\",\n    \"activeSrcPath\": \"MyProj/MyProj/MyProj_App/ui\",\n    \"react\": {\n      \"templateRepo\": \"https://github.com/AGMO-Inc/custom-ui-react-template\",\n      \"templateRef\": \"master\"\n    }\n  },\n  \"marketplace\": {\n    \"endpoint\": \"dev\",\n    \"endpointUrl\": \"https://dev.marketplace-api.seamos.io/mcp\"\n  }\n}\n"
           },
           {
             "type": "write",
@@ -251,7 +251,7 @@
           {
             "type": "write",
             "path": "/tmp/icu-eval-rstni/.seamos-workspace.json",
-            "content": "{\n  \"schemaVersion\": 1,\n  \"createdAt\": \"2026-05-06T00:00:00Z\",\n  \"scope\": \"project\",\n  \"ui\": {\n    \"defaultFramework\": \"vanilla\",\n    \"activeSrcPath\": \"MyProj/MyProj/MyProj_App/ui\",\n    \"react\": {\n      \"templateRepo\": \"https://github.com/AGMO-Inc/custom-ui-react-template\",\n      \"templateRef\": \"main\"\n    }\n  },\n  \"marketplace\": {\n    \"endpoint\": \"dev\",\n    \"endpointUrl\": \"https://dev.marketplace-api.seamos.io/mcp\"\n  }\n}\n"
+            "content": "{\n  \"schemaVersion\": 1,\n  \"createdAt\": \"2026-05-06T00:00:00Z\",\n  \"scope\": \"project\",\n  \"ui\": {\n    \"defaultFramework\": \"vanilla\",\n    \"activeSrcPath\": \"MyProj/MyProj/MyProj_App/ui\",\n    \"react\": {\n      \"templateRepo\": \"https://github.com/AGMO-Inc/custom-ui-react-template\",\n      \"templateRef\": \"master\"\n    }\n  },\n  \"marketplace\": {\n    \"endpoint\": \"dev\",\n    \"endpointUrl\": \"https://dev.marketplace-api.seamos.io/mcp\"\n  }\n}\n"
           },
           {
             "type": "write",

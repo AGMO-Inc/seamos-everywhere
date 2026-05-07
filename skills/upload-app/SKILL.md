@@ -13,16 +13,22 @@ Upload a SeamOS app package (.fif) with metadata and assets to the SeamOS market
 ## Prerequisites
 
 Before running this skill, the user's project must have:
-1. `.mcp.json` at project root with `seamos-marketplace` server configured. Authentication is OAuth (PKCE) — the first MCP call triggers a one-time browser login; no API key required.
-2. `seamos-assets/` directory at project root with the required files
+1. **At least one workspace marker** at project root (USER_ROOT). One of:
+   - `.seamos-workspace.json` with `marketplace.endpointUrl` (written by `setup` for both project and user scope) — **preferred**.
+   - `.mcp.json` with `mcpServers.seamos-marketplace.url` (project-scope only — written by `setup` when scope=project).
+   - Plugin-registered `mcp-servers.json` + `userConfig.seamos_api_url` (user-scope; resolved by Claude Code at MCP server spawn time).
+2. `seamos-assets/` directory at project root with the required files.
+
+Authentication is OAuth (PKCE) — the first MCP call triggers a one-time browser login; no API key required. If the user has not yet run `setup`, do that first; do NOT instruct them to hand-author `.mcp.json`.
 
 ## Asset Convention
 
-`{project root}` below is **USER_ROOT** — the directory containing `.mcp.json`. The skill expects files in this structure:
+`{project root}` below is **USER_ROOT** — the directory containing the workspace marker (`.seamos-workspace.json` and/or `.mcp.json`). The skill expects files in this structure:
 
 ```
-{project root}/                <- USER_ROOT (directory containing .mcp.json)
-├── .mcp.json
+{project root}/                <- USER_ROOT (workspace marker present)
+├── .seamos-workspace.json     # always written by setup (both scopes)
+├── .mcp.json                  # only in project-scope installs
 └── seamos-assets/
     ├── config.json            # App metadata (auto-generated on first run)
     ├── mainImage.png          # Main image (required)
@@ -48,9 +54,18 @@ Call the `create_app` MCP tool (mcp__seamos-marketplace__create_app). This retur
 - `endpoint.authentication.uploadToken` — a 5-minute, one-time-use token (`ut_*`) bound to this user, used as `Authorization: Bearer <token>` on the multipart upload in Step 4
 - `endpoint.authentication.uploadTokenExpiresAt` — ISO-8601 expiry
 
-**B. Parse MCP config:**
-Read `.mcp.json` from the project root. Extract:
-- `url` from `mcpServers.seamos-marketplace.url` — strip the `/mcp` suffix to get the base URL (e.g., `http://localhost:8088`). The MCP-level OAuth token is managed by Claude Code automatically; no API key extraction is needed here.
+**B. Resolve marketplace base URL (multi-source — A3):**
+Use the bundled helper script — it implements the priority order below and prints the base URL (no `/mcp` suffix) on stdout, or exits 64 with an actionable remediation hint:
+```bash
+bash skills/upload-app/scripts/resolve-marketplace-url.sh "$USER_ROOT"
+```
+Priority order (first success wins, `/mcp` suffix stripped automatically):
+1. `.seamos-workspace.json` → `.marketplace.endpointUrl` (preferred — written by `setup` for both project and user scope; uniform across scope).
+2. `.mcp.json` → `.mcpServers["seamos-marketplace"].url` (project-scope fallback). For older 0.7.x stdio templates, the helper also pulls the last URL arg from `args[]`.
+3. `CLAUDE_MCP_SEAMOS_URL` env var (set by Claude Code when the plugin's `mcp-servers.json` + `userConfig` registers the MCP server at runtime). When the env var is absent but the running session still has `mcp__seamos-marketplace__create_app` registered, Step 1A's `create_app` response itself carries the canonical endpoint — use that and skip file parsing entirely.
+4. **None of the above** → helper exits 64 with a remediation hint. Surface it: tell the user to run the `setup` skill first, or `setup --reconfigure` if `.seamos-workspace.json` is stale and missing `marketplace.endpointUrl`. Do **not** ask the user to hand-author `.mcp.json`.
+
+The MCP-level OAuth token is managed by Claude Code automatically; no API key extraction is needed here.
 
 **C. Scan asset directory:**
 Scan `seamos-assets/` and categorize found files:
@@ -65,7 +80,10 @@ Scan `seamos-assets/` and categorize found files:
 After all three complete, check for issues:
 
 **Hard stop:**
-- `.mcp.json` missing or no seamos-marketplace config → guide user to create it
+- All four URL discovery sources from Step 1B failed (no `.seamos-workspace.json` with `marketplace.endpointUrl`, no `.mcp.json` with `seamos-marketplace`, no plugin-registered MCP server, no `create_app` response). Tell the user:
+  - "Run the `setup` skill first to bootstrap workspace markers and MCP server registration."
+  - If they previously ran 0.7.1 setup and the file lacks `marketplace.endpointUrl`: "Run `setup --reconfigure` to migrate."
+  - Do NOT ask the user to hand-author `.mcp.json` — `setup` is the supported entry point.
 
 **If `seamos-assets/` directory is missing** → auto-scaffold:
 1. Create directory structure: `seamos-assets/`, `seamos-assets/builds/`, `seamos-assets/screenshots/`
@@ -112,7 +130,7 @@ When `config.json` doesn't exist yet:
    - Nested `itemSchema` → recurse and generate defaults for inner fields
    - **Enum fields** — if a field has enum values, set the default to `""` (empty string). The available options will be listed in the field guide (Step 3A-5) so the user knows what to choose.
    - **Example values from schema** — for non-enum fields, if the schema provides an `example` value, use it as the default. Example: `"email": "sksjsksh22@gmail.com"`, `"feuType": "AUTO-IT_RV-C1000, RCU4-3Q/20, RCU4-3X/10"`. This lets users see the expected format and replace with their own values.
-3. **Fallback** — if Step 1A failed (MCP server unreachable), read the static template from `skills/upload-app/references/config-template.json` instead.
+3. **Fallback** — if Step 1A failed (MCP server unreachable), read the static template from `skills/upload-app/references/config-template.json` instead. The fallback template intentionally leaves all enum-typed fields as empty strings (`""`) and arrays as `[]` so it cannot be silently uploaded with placeholder values; consult `references/config-enum-values.md` for the valid values when filling them in.
 4. **Write** the generated JSON to `seamos-assets/config.json`
 5. **Show field guide** — list each field with its description, type, required/optional status, and enum values (if any) from the schema. Group by required first, then optional. For enum fields, prominently display all valid options (e.g., "Options: CONSTRUCTION, AGRICULTURE, DRONE, ENTERTAINMENT, DIAGNOSTICS, MATERIALS") so the user can pick the correct value.
 6. **STOP here** — do not proceed to upload. The user needs to fill in the config first.

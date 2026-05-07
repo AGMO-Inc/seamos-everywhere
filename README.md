@@ -6,7 +6,7 @@
 
 **Claude Code plugin for the SeamOS AI Native developer ecosystem**
 
-[![Version](https://img.shields.io/badge/version-0.7.2-blue.svg)](https://github.com/AGMO-Inc/seamos-everywhere/releases)
+[![Version](https://img.shields.io/badge/version-0.7.4-blue.svg)](https://github.com/AGMO-Inc/seamos-everywhere/releases)
 [![Skills](https://img.shields.io/badge/skills-12-orange.svg)](#skills)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey.svg)](LICENSE)
 [![Org](https://img.shields.io/badge/org-AGMO--Inc-green.svg)](https://github.com/AGMO-Inc)
@@ -286,7 +286,7 @@ Re-run FD Headless `UPDATE_SDK_APP` on an existing project. Refreshes the genera
 Contributions are welcome. Please open an issue to discuss your idea before submitting a pull request.
 
 - **Bug reports & feature requests:** [Open an issue](https://github.com/AGMO-Inc/seamos-everywhere/issues)
-- **Pull requests:** Fork the repo, create a feature branch, and submit a PR against `main`
+- **Pull requests:** Fork the repo, create a feature branch, and submit a PR against `master`
 
 ## License
 

@@ -83,10 +83,29 @@ assert_contains "$CP_OUTPUT" "PROJECT_NAME=SmokeApp" "PROJECT_NAME matches fixtu
 assert_contains "$CP_OUTPUT" "$(printf 'WORKSPACE=%s/SmokeApp' "$(cd "$FIXTURE_1" && pwd -P)")" "WORKSPACE under USER_ROOT"
 
 echo ""
+echo "=== preflight C1: zsh-alias symlink hint present in preflight.sh ==="
+# preflight.sh already auto-augments PATH with /Applications/Docker.app/.../bin,
+# so a runtime test rarely reaches the new "docker not found AND Docker.app
+# binary IS present" hint branch — augmentation succeeds first. We assert the
+# hint string itself is reachable (grep the source) so future refactors can't
+# silently delete it.
+if grep -q "ln -sf /Applications/Docker.app/Contents/Resources/bin/docker /usr/local/bin/docker" \
+     "$REPO_ROOT/skills/create-project/scripts/preflight.sh"; then
+  echo "  ✓ C1 symlink hint present in preflight.sh"
+else
+  echo "  ✗ C1 symlink hint missing — restore the Docker.app + symlink hint branch"
+  exit 1
+fi
+
+echo ""
 echo "=== build-fif smoke (Docker-free dry-run) ==="
 fixture_clean "$FIXTURE_2"
 touch "$FIXTURE_2/.mcp.json"
 mkdir -p "$FIXTURE_2/MyApp/MyApp/com.bosch.fsp.MyApp"
+# Need either pom.xml (Java) or CMakeLists.txt (CPP) so build-fif validates.
+mkdir -p "$FIXTURE_2/MyApp/MyApp/MyApp_CPP_SDK" "$FIXTURE_2/MyApp/MyApp/MyApp"
+echo 'cmake_minimum_required(VERSION 3.10)' > "$FIXTURE_2/MyApp/MyApp/MyApp/CMakeLists.txt"
+echo 'cmake_minimum_required(VERSION 3.10)' > "$FIXTURE_2/MyApp/MyApp/MyApp_CPP_SDK/CMakeLists.txt"
 
 BF_OUTPUT="$(bash "$REPO_ROOT/skills/build-fif/scripts/build-fif.sh" "$FIXTURE_2" --dry-run 2>&1)"
 assert_contains "$BF_OUTPUT" "PROJECT_NAME=MyApp" "build-fif resolves PROJECT_NAME via glob"

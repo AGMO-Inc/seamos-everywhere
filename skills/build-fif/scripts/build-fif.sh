@@ -354,11 +354,19 @@ if [ "$APP_TYPE" = "cpp" ]; then
     if [ -f "$FDPROPS" ]; then
         CPP_APP_DIR=$(grep "^CPP_APP_PATH=" "$FDPROPS" 2>/dev/null | sed 's/^CPP_APP_PATH="\{0,1\}cmake|\{0,1\}//' | sed 's/"\{0,1\}$//')
     fi
-    if [ -n "$CPP_APP_DIR" ]; then
+
+    # Try the props-declared path first, then auto-search.
+    # A2 (2026-05): 0.7.1 의 FD Headless 가 신규 프로젝트에 잘못된 'App' suffix 가
+    #   붙은 CPP_APP_PATH 를 기록하는 회귀가 있어, props 의 CPP_APP_DIR 가 가리키는
+    #   디렉토리가 실제로 부재하는 사례가 발견됨. 본 스킬은 이때 fail 하지 않고
+    #   PROJ_ROOT 하위에서 CMakeLists.txt 보유 디렉토리를 자동 검색해 fallback 한다.
+    APP_PATH=""
+    if [ -n "$CPP_APP_DIR" ] && [ -d "$PROJ_ROOT/$CPP_APP_DIR" ] && [ -f "$PROJ_ROOT/$CPP_APP_DIR/CMakeLists.txt" ]; then
         APP_PATH="$PROJ_ROOT/$CPP_APP_DIR"
-    else
-        # Fallback: find first directory with CMakeLists.txt that isn't the SDK
-        APP_PATH=""
+    fi
+
+    if [ -z "$APP_PATH" ]; then
+        # Auto-search: first directory with CMakeLists.txt that isn't the SDK / FSP / output.
         for d in "$PROJ_ROOT"/*/; do
             dname=$(basename "$d")
             [ "$dname" = "com.bosch.fsp.$FEATURE_NAME" ] && continue
@@ -369,8 +377,19 @@ if [ "$APP_TYPE" = "cpp" ]; then
                 break
             fi
         done
-        if [ -z "$APP_PATH" ]; then
-            echo "ERROR: C++ app directory not found. Expected a directory with CMakeLists.txt."
+
+        if [ -n "$APP_PATH" ]; then
+            if [ -n "$CPP_APP_DIR" ]; then
+                # Props pointed somewhere that doesn't exist; we recovered.
+                echo "WARN: FDProject.props CPP_APP_PATH=\"cmake|$CPP_APP_DIR\" points to non-existent directory ($PROJ_ROOT/$CPP_APP_DIR)."
+                echo "WARN: auto-resolved C++ app directory → $APP_PATH"
+                echo "WARN: edit $FDPROPS and replace CPP_APP_PATH with \"cmake|$(basename "$APP_PATH")\" to silence this warning."
+            fi
+        else
+            echo "ERROR: C++ app directory not found. Expected a directory with CMakeLists.txt under $PROJ_ROOT."
+            if [ -n "$CPP_APP_DIR" ]; then
+                echo "  FDProject.props CPP_APP_PATH points to: $CPP_APP_DIR (does not exist)"
+            fi
             echo "  Set CPP_APP_PATH in FDProject.props or check project structure."
             exit 1
         fi
@@ -487,6 +506,18 @@ fi
 echo "[4/7] Checking Docker image..."
 
 if ! docker images --format '{{.Repository}}:{{.Tag}}' | grep -q "nvx-fif-gen:${NVX_VERSION}"; then
+    # A1: defuse stale public.ecr.aws bearer tokens before pulling. Check
+    # warns when stale entry exists; user can re-run with --clean-ecr-auth
+    # to auto-clean. We do not auto-clean by default — the helper edits
+    # ~/.docker/config.json which is shared with the user's other tooling.
+    SHARED_HELPER="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)/shared-references/scripts/check-ecr-public-auth.sh"
+    if [ -f "$SHARED_HELPER" ]; then
+        if [ "${BUILD_FIF_CLEAN_ECR_AUTH:-0}" = "1" ]; then
+            bash "$SHARED_HELPER" --auto-clean || true
+        else
+            bash "$SHARED_HELPER" || true
+        fi
+    fi
     echo "[4/7] Pulling Docker image... (this may take a while)"
     docker pull "$NVX_DOCKER_IMAGE"
     docker tag "$NVX_DOCKER_IMAGE" "nvx-fif-gen:${NVX_VERSION}"

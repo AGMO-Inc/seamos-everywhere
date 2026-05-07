@@ -156,7 +156,20 @@ if [ ! -d "${APP_PROJECT_ROOT}" ]; then
   exit 2
 fi
 if [ ! -d "${APP_PROJECT_ROOT}/com.bosch.fsp.${APP_NAME}" ]; then
-  err "APP_PROJECT_ROOT=${APP_PROJECT_ROOT} does not look like an FD project (missing com.bosch.fsp.${APP_NAME}/). Pass the inner <APP>/<APP> path."
+  err "APP_PROJECT_ROOT=${APP_PROJECT_ROOT} does not look like an FD project root."
+  err ""
+  err "Expected layout (the inner '<APP>' directory inside <USER_ROOT>/<APP>/):"
+  err ""
+  err "  \$APP_PROJECT_ROOT/"
+  err "  ├── com.bosch.fsp.${APP_NAME}/         <- FSP definition (FDProject.props lives here)"
+  err "  ├── ${APP_NAME}_CPP_SDK/               <- generated C++ SDK"
+  err "  └── ${APP_NAME}_${APP_NAME}/           <- C++ app code (CMakeLists.txt, src-gen/, etc.)"
+  err ""
+  err "Common mistakes:"
+  err "  - Pointing at <USER_ROOT>/${APP_NAME}     -> one level too shallow (no com.bosch.fsp.* sibling)"
+  err "  - Pointing at <USER_ROOT>/${APP_NAME}/${APP_NAME}/${APP_NAME}_${APP_NAME}  -> one level too deep (the app code dir, not the project root)"
+  err ""
+  err "Fix: APP_PROJECT_ROOT=<USER_ROOT>/${APP_NAME}/${APP_NAME}"
   exit 2
 fi
 
@@ -174,9 +187,20 @@ log "PLATFORM_ARGS=${PLATFORM_ARGS[*]}"
 
 # ─── Image pre-flight ──────────────────────────────────────────────────────
 if ! docker image inspect "${FD_CLI_IMAGE}" >/dev/null 2>&1; then
+  # A1: defuse stale public.ecr.aws bearer tokens (only relevant if the image
+  # is a public.ecr.aws/* path; helper is a no-op otherwise).
+  SHARED_HELPER="$(cd "${SCRIPT_DIR}/../.." 2>/dev/null && pwd)/shared-references/scripts/check-ecr-public-auth.sh"
+  if [ -f "$SHARED_HELPER" ]; then
+    if [ "${RUNAPP_CLEAN_ECR_AUTH:-0}" = "1" ]; then
+      bash "$SHARED_HELPER" --auto-clean || true
+    else
+      bash "$SHARED_HELPER" || true
+    fi
+  fi
   log "Image ${FD_CLI_IMAGE} not present; pulling…"
   if ! docker pull "${PLATFORM_ARGS[@]}" "${FD_CLI_IMAGE}" >/dev/null 2>&1; then
-    err "Failed to pull ${FD_CLI_IMAGE}. Check ECR auth (aws ecr-public get-login-password) or set FD_CLI_IMAGE to a local tag."
+    err "Failed to pull ${FD_CLI_IMAGE}. If the image is public.ecr.aws/* and you got 403, the helper above will have flagged a stale entry — re-run with RUNAPP_CLEAN_ECR_AUTH=1 to auto-clean ~/.docker/config.json."
+    err "Otherwise check ECR auth (aws ecr-public get-login-password) or set FD_CLI_IMAGE to a local tag."
     exit 4
   fi
 fi

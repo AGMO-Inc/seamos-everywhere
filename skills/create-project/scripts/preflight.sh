@@ -87,7 +87,20 @@ if command -v docker >/dev/null 2>&1; then
 elif command -v docker.exe >/dev/null 2>&1; then
   log_ok "docker.exe: $(docker.exe --version 2>/dev/null | head -1)"
 else
-  log_err "docker not found. Install Docker Desktop (macOS/Windows) or Docker Engine (Linux). If installed, set DOCKER=/path/to/docker."
+  # C1: zsh alias hint. macOS users sometimes have `alias docker=...` in zshrc
+  # without an actual binary on PATH (Docker Desktop install hooks did not
+  # symlink to /usr/local/bin). The PATH augmentation above tries the canonical
+  # Docker.app binary location; if that file exists but PATH still doesn't have
+  # it (sandboxed FS, weird perms), surface the symlink hint explicitly.
+  log_err "docker not found on PATH."
+  if [[ "$OS_NAME" == "Darwin" && -x "/Applications/Docker.app/Contents/Resources/bin/docker" ]]; then
+    log_err "  Docker Desktop binary IS present at /Applications/Docker.app/Contents/Resources/bin/docker but not on PATH."
+    log_err "  This often happens when zshrc has 'alias docker=...' but no symlink in /usr/local/bin/."
+    log_err "  Fix: sudo ln -sf /Applications/Docker.app/Contents/Resources/bin/docker /usr/local/bin/docker"
+    log_err "  Or:  export DOCKER=/Applications/Docker.app/Contents/Resources/bin/docker  # then re-run preflight"
+  else
+    log_err "  Install Docker Desktop (macOS/Windows) or Docker Engine (Linux). If installed, set DOCKER=/path/to/docker."
+  fi
 fi
 
 # jq

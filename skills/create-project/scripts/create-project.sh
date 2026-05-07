@@ -590,6 +590,18 @@ ensure_image() {
     echo "[image] using local: $tag" >&2
     return 0
   fi
+  # A1: defuse stale public.ecr.aws bearer tokens before the first pull.
+  # Helper is a no-op for non-ECR-public images and when ~/.docker/config.json
+  # is absent or jq is missing.
+  local shared_helper
+  shared_helper="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)/shared-references/scripts/check-ecr-public-auth.sh"
+  if [ -f "$shared_helper" ]; then
+    if [ "${CREATE_PROJECT_CLEAN_ECR_AUTH:-0}" = "1" ]; then
+      bash "$shared_helper" --auto-clean >&2 || true
+    else
+      bash "$shared_helper" >&2 || true
+    fi
+  fi
   echo "[image] not found locally, attempting pull: $tag" >&2
   if docker pull --platform linux/amd64 "$tag"; then
     return 0
@@ -599,6 +611,7 @@ ensure_image() {
     return 0
   fi
   echo "ERROR: image not available locally and pull failed: $tag" >&2
+  echo "  If the image is public.ecr.aws/* and you got 403: re-run with CREATE_PROJECT_CLEAN_ECR_AUTH=1 to auto-clean a stale ~/.docker/config.json entry." >&2
   return 69
 }
 ensure_image "$IMAGE_TAG" || exit 69

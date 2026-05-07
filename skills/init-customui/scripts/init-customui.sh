@@ -469,6 +469,20 @@ do_react() {
     exit 65
   fi
 
+  # A4 (2026-05): resolve remote HEAD when templateRef is the legacy default
+  # 'main' (or empty). Treat the remote's actual default branch as authoritative
+  # so a future template-repo rename never silently breaks setup -> init flow.
+  if [[ "$TEMPLATE_REF" == "main" ]]; then
+    if command -v git >/dev/null 2>&1; then
+      remote_default="$(git ls-remote --symref "$TEMPLATE_REPO" HEAD 2>/dev/null \
+        | awk '/^ref:/ { sub("refs/heads/", "", $2); print $2; exit }')" || remote_default=""
+      if [[ -n "$remote_default" && "$remote_default" != "$TEMPLATE_REF" ]]; then
+        warn "workspace ui.react.templateRef='$TEMPLATE_REF' overridden by remote default '$remote_default' (template repo: $TEMPLATE_REPO)"
+        TEMPLATE_REF="$remote_default"
+      fi
+    fi
+  fi
+
   if [[ $clone_needed -eq 1 ]]; then
     if [[ $DRY_RUN -eq 1 ]]; then
       log "[dry-run] would git clone --depth 1 -b $TEMPLATE_REF $TEMPLATE_REPO $CUSTOMUI_SRC"
@@ -479,11 +493,11 @@ do_react() {
         if [[ -d "$CUSTOMUI_SRC" ]]; then
           rm -rf "$CUSTOMUI_SRC"
         fi
-        err "STATUS_ERR: git clone failed"
+        err "STATUS_ERR: git clone failed (ref='$TEMPLATE_REF', repo='$TEMPLATE_REPO'). If the branch was renamed, run: setup --reconfigure"
         log "STATUS_ERR: git clone failed"
         exit 74
       fi
-      log "[clone] $CUSTOMUI_SRC"
+      log "[clone] $CUSTOMUI_SRC (ref=$TEMPLATE_REF)"
       rm -rf "$CUSTOMUI_SRC/.git"
       log "[clean] removed .git/ from $CUSTOMUI_SRC"
     fi
@@ -544,7 +558,17 @@ do_react() {
   fi
 }
 
-# Auto-patch deploy output path. Pattern A → Pattern B fallback.
+# Auto-patch deploy output path. Pattern A → Pattern A2 (insert) → Pattern B fallback.
+#
+# A5: 0.7.1 의 회귀 — sed substitute 가 매치 실패해도 SUCCESS 로 보고했고,
+#     사용자는 npm run build 후 산출물이 deep ui/ 가 아닌 customui-src/dist/ 로
+#     떨어지는 걸 manifest 비교로 한참 뒤에야 발견했다.
+#
+# 2026-05 부터:
+#   1) sed 직후 grep 으로 실제 patch 됐는지 검증.
+#   2) sed 가 못 잡았으면 (defineConfig 안에 build.outDir 키가 아예 없는 경우)
+#      awk 로 defineConfig 의 닫는 `}` 직전에 build 블록 삽입을 시도.
+#   3) 그래도 실패하면 STATUS_WARN — false-SUCCESS 금지.
 auto_patch_deploy() {
   local DEEP_UI_REL
   DEEP_UI_REL="$(relpath_between "$DEEP_UI" "$CUSTOMUI_SRC")"
@@ -559,11 +583,54 @@ auto_patch_deploy() {
   fi
 
   if [[ -n "$cfg" ]]; then
-    # Pattern A: vite.config — substitute outDir literal.
-    sed -i.bak -E "s|outDir:[[:space:]]*['\"]dist['\"]|outDir: '${DEEP_UI_REL}'|" "$cfg"
-    rm -f "${cfg}.bak"
-    log "[deploy-patch] vite outDir → ${DEEP_UI_REL} ($cfg)"
-    return 0
+    # ── Pattern A: substitute existing outDir literal ──
+    # Match common forms: outDir: 'dist' / outDir: "dist" / outDir:"./dist" / outDir: 'dist/'
+    cp "$cfg" "${cfg}.bak"
+    sed -i.tmp -E "s|outDir:[[:space:]]*['\"]\\.?/?dist/?['\"]|outDir: '${DEEP_UI_REL}'|" "$cfg"
+    rm -f "${cfg}.tmp"
+
+    if grep -qE "outDir:[[:space:]]*['\"]${DEEP_UI_REL//\//\\/}['\"]" "$cfg"; then
+      rm -f "${cfg}.bak"
+      log "[deploy-patch] vite outDir → ${DEEP_UI_REL} ($cfg) [pattern A: substitute]"
+      return 0
+    fi
+
+    # ── Pattern A2: outDir absent → insert a build block into defineConfig ──
+    # Restore from backup before retrying so we don't double-patch.
+    mv "${cfg}.bak" "$cfg"
+
+    # Skip A2 if the file already contains `build:` or `outDir:` we couldn't
+    # match — the config is non-standard and editing risks producing invalid TS.
+    if grep -qE '(^|[[:space:]])build:[[:space:]]*\{' "$cfg" \
+       || grep -qE '(^|[[:space:]])outDir:' "$cfg"; then
+      warn "[deploy-patch] vite.config has a non-standard outDir/build block we can't safely patch — falling through to package.json"
+    else
+      # Insert immediately after `defineConfig({` opening — safe because it is
+      # the standard scaffold pattern in the AGMO custom-ui-react-template.
+      local tmp_cfg
+      tmp_cfg="$(mktemp)"
+      awk -v deep="$DEEP_UI_REL" '
+        BEGIN { inserted = 0 }
+        # Match `defineConfig({` on a line; insert after it.
+        /defineConfig\s*\(\s*\{/ && !inserted {
+          print
+          print "  build: { outDir: '\''" deep "'\'', emptyOutDir: false },"
+          inserted = 1
+          next
+        }
+        { print }
+        END { exit (inserted ? 0 : 1) }
+      ' "$cfg" > "$tmp_cfg"
+      if [[ $? -eq 0 ]] && grep -q "outDir: '${DEEP_UI_REL}'" "$tmp_cfg"; then
+        mv "$tmp_cfg" "$cfg"
+        log "[deploy-patch] vite outDir → ${DEEP_UI_REL} ($cfg) [pattern A2: insert]"
+        return 0
+      fi
+      rm -f "$tmp_cfg"
+    fi
+
+    # vite.config 패치 모두 실패. package.json fallback 으로 진행.
+    warn "[deploy-patch] vite.config patch failed (no recognized outDir literal, no defineConfig anchor)"
   fi
 
   local pkg="$CUSTOMUI_SRC/package.json"
@@ -571,23 +638,41 @@ auto_patch_deploy() {
     # Pattern B: package.json#scripts.deploy.
     local tmp
     tmp="$(mktemp)"
-    jq --arg dir "$DEEP_UI_REL" \
-      '.scripts.deploy = ("npm run build && cp -r dist/* " + $dir + "/")' \
-      "$pkg" > "$tmp"
-    mv "$tmp" "$pkg"
-    log "[deploy-patch] package.json deploy → ${DEEP_UI_REL}"
-    return 0
+    if jq --arg dir "$DEEP_UI_REL" \
+        '.scripts.deploy = ("npm run build && cp -r dist/* " + $dir + "/")' \
+        "$pkg" > "$tmp"; then
+      mv "$tmp" "$pkg"
+      if jq -e --arg dir "$DEEP_UI_REL" '.scripts.deploy | contains($dir)' "$pkg" >/dev/null 2>&1; then
+        log "[deploy-patch] package.json deploy → ${DEEP_UI_REL} [pattern B]"
+        return 0
+      fi
+    fi
+    rm -f "$tmp"
+    warn "[deploy-patch] package.json scripts.deploy patch failed"
   fi
 
+  # All patterns failed — surface a STATUS_WARN reason (not SUCCESS).
+  DEPLOY_PATCH_FAILED=1
   warn "[deploy-patch] could not auto-patch — see references/react-template.md 'Patch failure recovery'"
+  warn "[deploy-patch] manual fix: add to ${cfg:-customui-src/vite.config.ts} inside defineConfig({...}):"
+  warn "[deploy-patch]   build: { outDir: '${DEEP_UI_REL}', emptyOutDir: false },"
   return 0
 }
 
 # ─── Dispatch ──────────────────────────────────────────────────────────────
+# Track non-fatal warnings raised during do_react.
+DEPLOY_PATCH_FAILED=0
+
 case "$TARGET_MODE" in
   vanilla) do_vanilla ;;
   react)   do_react ;;
 esac
+
+# A5: deploy-patch 실패 시 SUCCESS 가 아니라 STATUS_WARN 으로 종료.
+if [[ "${DEPLOY_PATCH_FAILED:-0}" -eq 1 ]]; then
+  log "STATUS_WARN: deploy-path patch skipped — add build.outDir manually (see warn lines above)"
+  exit 0
+fi
 
 log "STATUS_OK"
 exit 0

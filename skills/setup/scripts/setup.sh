@@ -14,6 +14,7 @@ ENDPOINT_INPUT="dev"
 RECONFIGURE=0
 NON_INTERACTIVE=0
 DRY_RUN=0
+SCOPE_OVERRIDE=""  # --scope project|user (B1)
 
 usage() {
   cat <<EOF
@@ -28,6 +29,9 @@ Options:
                                   dev   → https://dev.marketplace-api.seamos.io/mcp
                                   local → http://localhost:8088/mcp
                                   <URL> → used verbatim
+  --scope <project|user>        Force install scope (overrides auto-detection;
+                                useful when the BASH_SOURCE heuristic mis-classifies
+                                a plugin cache path as user-scope)
   --reconfigure                 Allow overwrite/merge prompts when files differ
   --non-interactive             Never prompt; defaults applied (skip on conflict)
   --dry-run                     Print intended writes without mutating anything
@@ -63,17 +67,66 @@ while [[ $# -gt 0 ]]; do
     --reconfigure)     RECONFIGURE=1; shift ;;
     --non-interactive) NON_INTERACTIVE=1; shift ;;
     --dry-run)         DRY_RUN=1; shift ;;
+    --scope)
+      if [[ $# -lt 2 ]]; then err "--scope requires a value"; exit 64; fi
+      case "$2" in
+        project|user) SCOPE_OVERRIDE="$2" ;;
+        *) err "--scope must be 'project' or 'user'"; exit 64 ;;
+      esac
+      shift 2 ;;
     --help|-h)         usage; exit 0 ;;
     *) err "unknown argument: $1"; usage >&2; exit 64 ;;
   esac
 done
 
-# ─── Step 1 — Resolve scope ────────────────────────────────────────────────
-case "${BASH_SOURCE[0]}" in
-  */.claude/plugins/*) SCOPE=user ;;
-  *)                   SCOPE=project ;;
-esac
-log "[scope] $SCOPE"
+# ─── Step 1 — Resolve scope (B1: multi-layer fallback) ─────────────────────
+# Priority order:
+#   1. --scope explicit override (always wins)
+#   2. ~/.claude/installed_plugins.json — authoritative when present
+#   3. BASH_SOURCE heuristic, but excluding the plugins/cache subtree which is
+#      a local-install download cache, NOT the user-scope install dir
+SCOPE=""
+SCOPE_REASON=""
+
+if [[ -n "$SCOPE_OVERRIDE" ]]; then
+  SCOPE="$SCOPE_OVERRIDE"
+  SCOPE_REASON="--scope flag"
+fi
+
+if [[ -z "$SCOPE" ]] && command -v jq >/dev/null 2>&1; then
+  IPJ="$HOME/.claude/installed_plugins.json"
+  if [[ -f "$IPJ" ]]; then
+    # The Claude Code plugin registry shape varies across versions; try the
+    # known fields. Accept either an object map or an array of plugin records.
+    PLUGIN_SCOPE_RAW="$(jq -r '
+      def find_seamos:
+        if type == "array" then
+          map(select(.name == "seamos-everywhere" or .pluginName == "seamos-everywhere")) | first
+        elif type == "object" then
+          (.plugins // {}) as $p
+          | if ($p | type) == "array"
+              then $p | map(select(.name == "seamos-everywhere" or .pluginName == "seamos-everywhere")) | first
+              else $p["seamos-everywhere"] // empty
+            end
+        else empty end;
+      (find_seamos // {}) | (.scope // .installScope // .installLocation // "")
+    ' "$IPJ" 2>/dev/null || echo "")"
+    case "$PLUGIN_SCOPE_RAW" in
+      user|global)         SCOPE="user";    SCOPE_REASON="installed_plugins.json:$PLUGIN_SCOPE_RAW" ;;
+      project|local|repo)  SCOPE="project"; SCOPE_REASON="installed_plugins.json:$PLUGIN_SCOPE_RAW" ;;
+    esac
+  fi
+fi
+
+if [[ -z "$SCOPE" ]]; then
+  case "${BASH_SOURCE[0]}" in
+    */.claude/plugins/cache/*) SCOPE="project"; SCOPE_REASON="bash-source:cache (local install)" ;;
+    */.claude/plugins/*)       SCOPE="user";    SCOPE_REASON="bash-source:user-plugins" ;;
+    *)                         SCOPE="project"; SCOPE_REASON="bash-source:other" ;;
+  esac
+fi
+
+log "[scope] $SCOPE ($SCOPE_REASON)"
 
 # ─── Step 2 — Resolve USER_ROOT ────────────────────────────────────────────
 resolve_realpath() {
@@ -234,6 +287,10 @@ else
   write_mcp_json_project
 fi
 
+# Tracks whether write_workspace_json found stale ui.react.templateRef='main'
+# without auto-migrating (caller didn't pass --reconfigure). Surfaced in Step 8.
+STALE_TEMPLATE_REF_DETECTED=0
+
 # ─── Step 5 — .seamos-workspace.json ───────────────────────────────────────
 write_workspace_json() {
   local target="$USER_ROOT/.seamos-workspace.json"
@@ -254,7 +311,7 @@ write_workspace_json() {
     --arg endpointUrl "$ENDPOINT_URL" \
     '{schemaVersion:1, createdAt:$createdAt, scope:$scope,
       ui:{defaultFramework:null, activeSrcPath:null,
-          react:{templateRepo:"https://github.com/AGMO-Inc/custom-ui-react-template", templateRef:"main"}},
+          react:{templateRepo:"https://github.com/AGMO-Inc/custom-ui-react-template", templateRef:"master"}},
       marketplace:{endpoint:$endpoint, endpointUrl:$endpointUrl}}')"
 
   if [[ -f "$target" ]]; then
@@ -269,14 +326,41 @@ write_workspace_json() {
     existing_version="$(jq -r '.schemaVersion // empty' "$target" 2>/dev/null || echo "")"
 
     if [[ "$existing_version" == "1" ]]; then
+      # A4: detect stale ui.react.templateRef == "main" left over from 0.7.0/0.7.1.
+      # The custom-ui-react-template default branch is `master`, so a stale
+      # `main` reference makes init-customui's git clone fail.
+      local existing_ref
+      existing_ref="$(jq -r '.ui.react.templateRef // empty' "$target" 2>/dev/null || echo "")"
+      local stale_template_ref=0
+      if [[ "$existing_ref" == "main" ]]; then
+        stale_template_ref=1
+        warn "stale .seamos-workspace.json detected: ui.react.templateRef='main' (template repo default is 'master'). Pass --reconfigure to migrate."
+        STALE_TEMPLATE_REF_DETECTED=1
+      fi
+
       if [[ $RECONFIGURE -eq 1 ]]; then
         if [[ $DRY_RUN -eq 1 ]]; then
           log "[dry-run] would merge new endpoint values into $target"
+          if [[ $stale_template_ref -eq 1 ]]; then
+            log "[dry-run] would migrate ui.react.templateRef: 'main' → 'master'"
+          fi
         else
           local merged
-          merged="$(jq --arg endpoint "$ENDPOINT_NAME" --arg endpointUrl "$ENDPOINT_URL" \
-            '.marketplace.endpoint=$endpoint | .marketplace.endpointUrl=$endpointUrl' \
-            "$target")"
+          # Always rewrite endpoint; conditionally migrate templateRef.
+          if [[ $stale_template_ref -eq 1 ]]; then
+            merged="$(jq --arg endpoint "$ENDPOINT_NAME" --arg endpointUrl "$ENDPOINT_URL" \
+              '.marketplace.endpoint=$endpoint | .marketplace.endpointUrl=$endpointUrl
+               | .ui.react.templateRef="master"' \
+              "$target")"
+            log "[migrate] ui.react.templateRef: 'main' → 'master'"
+            STALE_TEMPLATE_REF_DETECTED=0  # migrated this run, clear flag
+          else
+            merged="$(jq --arg endpoint "$ENDPOINT_NAME" --arg endpointUrl "$ENDPOINT_URL" \
+              '.marketplace.endpoint=$endpoint | .marketplace.endpointUrl=$endpointUrl' \
+              "$target")"
+          fi
+          # A3: ensure .marketplace.{endpoint,endpointUrl} exist for both scopes
+          # (upload-app's URL discovery prefers this over .mcp.json).
           printf '%s\n' "$merged" > "$target"
           log "[write] $target (reconfigure merge)"
         fi
@@ -366,20 +450,64 @@ if ! command -v timeout >/dev/null 2>&1 && ! command -v gtimeout >/dev/null 2>&1
   warn "timeout / gtimeout not found — install: $(install_hint timeout)"
 fi
 
-# ─── Step 7 — User-scope MCP guidance ──────────────────────────────────────
+# ─── Step 7 — User-scope MCP guidance (C5: condition the "auto-registered" claim) ─
+# In user scope, the plugin's mcp-servers.json declares the MCP server with
+# `${user_config.seamos_api_url}` placeholder. If userConfig is unset, the
+# placeholder stays unresolved and MCP server spawn fails silently — yet
+# previous wording told users it was "auto-registered", which they trusted
+# all the way to upload-app where the missing tool finally surfaced.
+#
+# We can't read the plugin userConfig directly from a setup script, but we
+# can probe the closest signal we have: whether the running session's MCP
+# tool list (recorded by Claude Code at runtime) includes seamos-marketplace.
+# That signal isn't available either at script time, so we degrade to a
+# conditional message — clear about what user must verify, not a guarantee.
+USERCONFIG_SUSPECTED_EMPTY=0
 if [[ "$SCOPE" == "user" ]]; then
-  log "[user-scope] MCP server is auto-registered via plugin mcp-servers.json + userConfig."
-  log "[user-scope] If 'mcp__seamos-marketplace__*' tools are not visible, run /mcp in Claude Code to verify. The first marketplace tool call opens a browser for one-time SeamOS login (OAuth)."
+  # Best-effort: look for the plugin's settings file in known Claude Code
+  # locations and check if `seamos_api_url` userConfig key is non-empty.
+  for cfg in \
+    "$HOME/.claude/settings.json" \
+    "$HOME/.claude/settings.local.json" \
+    "$HOME/.claude/plugin-settings.json"; do
+    if [[ -f "$cfg" ]] && command -v jq >/dev/null 2>&1; then
+      val="$(jq -r '
+        (.. | objects | select(has("seamos_api_url")) | .seamos_api_url) // empty
+      ' "$cfg" 2>/dev/null | head -1)"
+      if [[ -n "$val" ]]; then
+        USERCONFIG_SUSPECTED_EMPTY=0
+        break
+      fi
+      USERCONFIG_SUSPECTED_EMPTY=1
+    fi
+  done
+
+  if [[ $USERCONFIG_SUSPECTED_EMPTY -eq 1 ]]; then
+    log "[user-scope] STATUS_WARN: required userConfig 'seamos_api_url' not found in known Claude Code settings files."
+    log "[user-scope] Set it via:  /plugin config seamos-everywhere"
+    log "[user-scope] Until then, mcp__seamos-marketplace__* tools cannot register and upload-app will block."
+  else
+    log "[user-scope] MCP server registration delegated to plugin (mcp-servers.json + userConfig)."
+    log "[user-scope] Verify with /mcp in Claude Code. The first marketplace tool call opens a browser for one-time SeamOS login (OAuth)."
+  fi
 fi
 
 # ─── Step 8 — Final status ─────────────────────────────────────────────────
-if [[ ${#PREFLIGHT_MISSING[@]} -gt 0 && $NON_INTERACTIVE -eq 1 ]]; then
-  log "STATUS_WARN: preflight tools missing (${PREFLIGHT_MISSING[*]})"
-  exit 0
+WARN_REASONS=()
+if [[ ${#PREFLIGHT_MISSING[@]} -gt 0 ]]; then
+  WARN_REASONS+=("preflight tools missing (${PREFLIGHT_MISSING[*]})")
+fi
+if [[ $USERCONFIG_SUSPECTED_EMPTY -eq 1 ]]; then
+  WARN_REASONS+=("userConfig 'seamos_api_url' empty — set via /plugin config")
+fi
+if [[ $STALE_TEMPLATE_REF_DETECTED -eq 1 ]]; then
+  WARN_REASONS+=("stale .seamos-workspace.json templateRef='main' — re-run with --reconfigure to migrate")
 fi
 
-if [[ ${#PREFLIGHT_MISSING[@]} -gt 0 ]]; then
-  log "STATUS_WARN: preflight tools missing (${PREFLIGHT_MISSING[*]})"
+if [[ ${#WARN_REASONS[@]} -gt 0 ]]; then
+  # Join with '; ' for one machine-parseable line.
+  IFS='; ' joined="${WARN_REASONS[*]}"
+  log "STATUS_WARN: ${joined}"
   exit 0
 fi
 

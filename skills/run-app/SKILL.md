@@ -122,6 +122,21 @@ APP_PROJECT_ROOT="$HOME/work/MyApp/MyApp" \
   bash scripts/run-app.sh --via-fd-cli --app-name MyApp
 ```
 
+#### `APP_PROJECT_ROOT` 가 가리켜야 할 정확한 디렉토리 (C3)
+
+`<USER_ROOT>/<APP>/<APP>` — FD Headless 가 생성한 **inner `<APP>` 폴더**. 다음 3개 형제가 모두 거기 있어야 한다:
+
+```
+$APP_PROJECT_ROOT/                    ← 여기가 APP_PROJECT_ROOT
+├── com.bosch.fsp.<APP>/             ← FSP 정의 (FDProject.props 위치)
+├── <APP>_CPP_SDK/                   ← 생성된 C++ SDK
+└── <APP>_<APP>/                     ← C++ 앱 코드 (CMakeLists.txt, src-gen/, …)
+```
+
+자주 발생하는 오류:
+- `<USER_ROOT>/<APP>` (한 단계 얕음) — `com.bosch.fsp.*` 형제가 없으니 스크립트가 reject.
+- `<USER_ROOT>/<APP>/<APP>/<APP>_<APP>` (한 단계 깊음) — 앱 코드 폴더지 프로젝트 루트가 아님.
+
 | Flag | Default | 설명 |
 |------|---------|------|
 | `--app-name <NAME>` | required | run-app.sh 와 동일. APP_PROJECT_ROOT 자동 derive. |

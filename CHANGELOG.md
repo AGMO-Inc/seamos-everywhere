@@ -2,6 +2,42 @@
 
 All notable changes to **seamos-everywhere** are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [SemVer](https://semver.org/) (pre-1.0: minor bumps signal feature additions, patch bumps signal fixes).
 
+## [0.7.4] — 2026-05-07
+
+0.7.1 pluginTest71 워크스루 (CPP / IMU angle viewer 를 새 워크스페이스에서 setup → create-project → init-customui → 코드 → run-app → build-fif → upload-app 까지 돌려본 end-to-end) 에서 발견된 14건 함정 중 우리 측 책임 11건을 일괄 픽스. 외부 의존 3건(B2 plugin install userConfig prompt, B3 custom-ui-react-template repo, C2 marketplace name alias)은 우리 측 안내만 강화하고 별도 트랙으로 처리.
+
+### Fixed — Hard-stop
+- **A2 / `skills/build-fif/scripts/build-fif.sh`** — FD Headless 0.7.1 가 `FDProject.props` 의 `CPP_APP_PATH` 에 잘못된 `App` suffix 를 박는 회귀가 있어 `[2/7]` 단계에서 즉사. props 가 가리키는 dir 부재 시 `PROJ_ROOT` 하위에서 `CMakeLists.txt` 보유 디렉토리를 자동 검색 + `WARN: ...auto-resolved...` 출력 후 진행 (산출물 빌드는 정상). 사용자가 props 를 직접 고쳐야 한다는 안내도 함께 surface.
+- **A3 / `skills/upload-app/`** — `.mcp.json` 부재를 hard stop 으로 단정하던 가정 폐기. URL discovery 를 4-source 다층화: `.seamos-workspace.json.marketplace.endpointUrl` (preferred, project/user 양 scope) → `.mcp.json.mcpServers["seamos-marketplace"].url` (project scope) → `CLAUDE_MCP_SEAMOS_URL` env var → fail-with-remediation. 결정 로직을 단독 헬퍼 `scripts/resolve-marketplace-url.sh` 로 추출 (11 unit tests).
+- **A4 / `skills/setup/`, `skills/init-customui/`** — `.seamos-workspace.json` 의 `ui.react.templateRef` 기본값을 `main` → `master` 로 교정 (실제 템플릿 레포 `AGMO-Inc/custom-ui-react-template` 의 default branch). 0.7.1 까지 박혀있던 `main` 은 데이터 결함이라 사용자가 JSON 을 수동 편집하지 않는 한 `git clone --depth 1 -b main` 에서 100% 실패. 추가로 setup 의 `--reconfigure` 경로에서 stale `main` 자동 마이그레이션 + STATUS_WARN, init-customui 는 `git ls-remote --symref HEAD` 로 remote default 를 진실로 삼아 미래 rename 도 자동 흡수.
+- **A5 / `skills/init-customui/scripts/init-customui.sh`** — `auto_patch_deploy()` 가 sed substitute 결과 검증 없이 SUCCESS 보고하던 회귀 제거. Pattern A (substitute) → Pattern A2 (`defineConfig({...})` 안에 build 블록 awk 삽입) → STATUS_WARN 의 3단 폴백. **false-SUCCESS 금지** — 패치 실제 반영 여부를 `grep` 후속 검증, 미반영이면 `STATUS_WARN: deploy-path patch skipped` + 정확한 수동 스니펫 출력.
+
+### Fixed — Functional
+- **B1 / `skills/setup/scripts/setup.sh`** — scope 자동 감지가 `~/.claude/plugins/cache/...` 같은 local-install 캐시 경로도 user-scope 로 오판하던 문제 수정. 결정 우선순위를 `--scope` flag → `~/.claude/installed_plugins.json` → `BASH_SOURCE` 휴리스틱(cache 분리) 의 3단 폴백으로 교체.
+- **C5 / `skills/setup/scripts/setup.sh`** — user-scope 안내가 `MCP server is auto-registered` 로 단언하던 문제. 실제로는 `userConfig.seamos_api_url` 미입력 시 등록 자체 실패하는데 사용자는 안내를 믿고 진행하다 upload-app 에서 막혔음. `~/.claude/settings*.json` 에서 `seamos_api_url` 값 best-effort 검사 후 부재 시 `STATUS_WARN: userConfig 'seamos_api_url' empty` + `/plugin config` 안내.
+
+### Fixed — Diagnostic / UX
+- **A1 / `skills/shared-references/scripts/check-ecr-public-auth.sh`** (신설) — `~/.docker/config.json` 의 stale `public.ecr.aws` bearer token 이 anonymous public pull 을 403 으로 막던 회귀를 일괄 처리하는 공유 헬퍼. 9 unit tests. `build-fif` / `run-app --via-fd-cli` / `create-project` 의 docker pull 직전에 호출 (`*_CLEAN_ECR_AUTH=1` env 로 `--auto-clean` 활성).
+- **C1 / `skills/create-project/scripts/preflight.sh`** — zsh alias 만 있고 `/usr/local/bin/docker` symlink 가 없는 macOS 환경에서 `command -v docker` 가 false 가 나는 케이스에 대해, Docker.app 바이너리 존재 시 `sudo ln -sf .../docker /usr/local/bin/docker` 정확한 hint 출력.
+- **C3 / `skills/run-app/scripts/run-via-fd-cli.sh` + `skills/run-app/SKILL.md`** — `APP_PROJECT_ROOT` 부정확 시 `does not look like an FD project` 메시지를 layout diagram (`com.bosch.fsp.<APP>` / `<APP>_CPP_SDK` / `<APP>_<APP>` 형제) 로 강화 + 자주 발생하는 오류 두 가지(한 단계 얕음 / 깊음) 명시.
+- **C4 / `skills/upload-app/references/`** — `config-template.json` 의 `pricingType: "FREE | PAID"` 류 enum placeholder 가 그대로 backend validator 에 흘러 reject 되던 문제. enum 항목은 모두 `""` / `[]` 로 두고 동행 가이드 `references/config-enum-values.md` 신설하여 valid value 와 source-of-truth (live `create_app` schema) 안내.
+
+### Eval
+- 신규 6개 단위 테스트 / smoke 보강 — 7개 test suite 전수 PASS. 내역: setup smoke 4 case (B1/A4-warn/A4-migrate/A3 endpointUrl), init-customui smoke A5 vite.config 3 case, build-fif `test-cpp-app-fallback.sh` 4 case, upload-app `test-resolve-url.sh` 11 case, shared-references `test-check-ecr-public-auth.sh` 9 case, create-project smoke C1 hint grep + build-fif fixture 보강.
+
+### Documentation
+- **`README.md`** — Contributing 섹션의 "submit a PR against `main`" → `master` (이 레포 자체의 default branch 도 `master`).
+- **`skills/setup/SKILL.md`** — Scope Resolution + Plugin userConfig 섹션 신설, Execution Flow 갱신.
+
+### Migration
+- v0.7.3 이하에서 이미 생성한 `.seamos-workspace.json` 은 자동 갱신되지 않는다.
+  - `ui.react.templateRef` 가 `"main"` 인 경우: `setup --reconfigure` 한 번 돌리면 자동 마이그레이션 + 백업 없이 in-place 수정 (`[migrate] ui.react.templateRef: 'main' → 'master'` 로그).
+  - `marketplace.endpointUrl` 이 부재한 경우 (0.7.1 이전 schemaVersion): 동일하게 `setup --reconfigure` 로 보강.
+- 외부 의존 (이번 릴리스 범위 밖):
+  - **B2** — `/plugin install` 직후 plugin 의 required `userConfig.seamos_api_url` 이 prompt 되지 않는 문제는 Claude Code 본체 책임. 수동 설정: `/plugin config seamos-everywhere`.
+  - **B3** — `customui-src` 템플릿의 TanStack `routeTree.gen.ts` stale 으로 신규 route 추가 시 build 실패는 [`AGMO-Inc/custom-ui-react-template`](https://github.com/AGMO-Inc/custom-ui-react-template) 레포의 `package.json#scripts.build` 에 `tsr generate &&` 가 추가되면 자동 해소. 별도 PR 트랙.
+  - **C2** — `/plugin marketplace add AGMO-Inc/seamos-everywhere` 후 marketplace name alias (`seamos-plugins`) 혼동은 Claude Code 본체 측 협업 항목.
+
 ## [0.7.2] — 2026-05-07
 
 Two follow-ups to v0.7.1: a missing OAuth client declaration that prevented the marketplace handshake from completing, plus a migration note for users coming directly from a v0.5.x install.

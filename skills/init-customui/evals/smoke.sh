@@ -37,7 +37,7 @@ setup_fixture() {
     "activeSrcPath": null,
     "react": {
       "templateRepo": "https://github.com/AGMO-Inc/custom-ui-react-template",
-      "templateRef": "main"
+      "templateRef": "master"
     }
   },
   "marketplace": {
@@ -101,5 +101,63 @@ jq '.ui.activeSrcPath = "MyProj/MyProj/MyProj_App/ui"' "$FIXTURE/dest1/.seamos-w
 out_d="$(cd "$FIXTURE/dest1" && bash "$ICU" --ui react --non-interactive)"
 echo "$out_d" | grep -q '\[skip\] mode mismatch' || fail "destructive without --reset should emit [skip] mode mismatch"
 echo "$out_d" | tail -n1 | grep -q '^STATUS_OK$' || fail "destructive skip last line not STATUS_OK"
+
+# 7. A5 — auto_patch_deploy unit tests (extracted-function harness, network-free).
+#    Three fixtures: outDir literal substitute / build block insert / non-standard skip.
+A5_DIR="$FIXTURE/a5-vite"
+mkdir -p "$A5_DIR/case1" "$A5_DIR/case2" "$A5_DIR/case3"
+cat > "$A5_DIR/case1/vite.config.ts" <<'EOF'
+import { defineConfig } from 'vite';
+export default defineConfig({
+  plugins: [],
+  build: { outDir: 'dist', sourcemap: true },
+});
+EOF
+cat > "$A5_DIR/case2/vite.config.ts" <<'EOF'
+import { defineConfig } from 'vite';
+export default defineConfig({ plugins: [] });
+EOF
+cat > "$A5_DIR/case3/vite.config.ts" <<'EOF'
+import { defineConfig } from 'vite';
+const x = '/tmp/x';
+export default defineConfig({ plugins: [], build: { outDir: x } });
+EOF
+
+# Extract the auto_patch_deploy function and run it against each fixture.
+A5_HARNESS="$A5_DIR/harness.sh"
+{
+  echo '#!/usr/bin/env bash'
+  echo 'set -uo pipefail'
+  echo 'log()  { printf "%s\n" "$*"; }'
+  echo 'warn() { printf "WARN: %s\n" "$*" >&2; }'
+  echo 'relpath_between() { printf "%s\n" "../../app/ui"; }'
+  awk '/^# Auto-patch deploy output path/,/^}$/' "$ICU"
+  echo 'CUSTOMUI_SRC="$1"'
+  echo 'DEEP_UI="$1/../../app/ui"'
+  echo 'DEPLOY_PATCH_FAILED=0'
+  echo 'auto_patch_deploy'
+  echo 'echo "DEPLOY_PATCH_FAILED=$DEPLOY_PATCH_FAILED"'
+} > "$A5_HARNESS"
+chmod +x "$A5_HARNESS"
+
+# Case 1: literal substitute should succeed.
+out_c1="$(bash "$A5_HARNESS" "$A5_DIR/case1" 2>&1)"
+echo "$out_c1" | grep -q 'DEPLOY_PATCH_FAILED=0' || fail "A5 case1: pattern A substitute failed"
+grep -q "outDir: '../../app/ui'" "$A5_DIR/case1/vite.config.ts" \
+  || fail "A5 case1: outDir literal not patched"
+
+# Case 2: build block absent — pattern A2 should insert.
+out_c2="$(bash "$A5_HARNESS" "$A5_DIR/case2" 2>&1)"
+echo "$out_c2" | grep -q 'DEPLOY_PATCH_FAILED=0' || fail "A5 case2: pattern A2 insert failed"
+grep -q "build: { outDir: '../../app/ui'" "$A5_DIR/case2/vite.config.ts" \
+  || fail "A5 case2: build.outDir not inserted"
+
+# Case 3: non-standard variable outDir — must NOT silently SUCCEED.
+out_c3="$(bash "$A5_HARNESS" "$A5_DIR/case3" 2>&1)"
+echo "$out_c3" | grep -q 'DEPLOY_PATCH_FAILED=1' \
+  || fail "A5 case3: false-SUCCESS regression — non-standard outDir should set DEPLOY_PATCH_FAILED=1"
+# File must be untouched.
+grep -q "outDir: x" "$A5_DIR/case3/vite.config.ts" \
+  || fail "A5 case3: file mutated despite no safe patch path"
 
 pass

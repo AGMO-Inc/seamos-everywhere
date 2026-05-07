@@ -51,7 +51,7 @@
           {
             "type": "write",
             "path": "/tmp/setup-eval-idem/.seamos-workspace.json",
-            "content": "{\n  \"schemaVersion\": 1,\n  \"createdAt\": \"2026-05-06T00:00:00Z\",\n  \"scope\": \"project\",\n  \"ui\": {\n    \"defaultFramework\": null,\n    \"activeSrcPath\": null,\n    \"react\": {\n      \"templateRepo\": \"https://github.com/AGMO-Inc/custom-ui-react-template\",\n      \"templateRef\": \"main\"\n    }\n  },\n  \"marketplace\": {\n    \"endpoint\": \"dev\",\n    \"endpointUrl\": \"https://dev.marketplace-api.seamos.io/mcp\"\n  }\n}\n"
+            "content": "{\n  \"schemaVersion\": 1,\n  \"createdAt\": \"2026-05-06T00:00:00Z\",\n  \"scope\": \"project\",\n  \"ui\": {\n    \"defaultFramework\": null,\n    \"activeSrcPath\": null,\n    \"react\": {\n      \"templateRepo\": \"https://github.com/AGMO-Inc/custom-ui-react-template\",\n      \"templateRef\": \"master\"\n    }\n  },\n  \"marketplace\": {\n    \"endpoint\": \"dev\",\n    \"endpointUrl\": \"https://dev.marketplace-api.seamos.io/mcp\"\n  }\n}\n"
           },
           {
             "type": "write",
@@ -195,6 +195,113 @@
       "stdout_contains": [
         "STATUS_OK",
         "ftp://bad"
+      ],
+      "stderr_contains": []
+    },
+    "timeout_ms": 10000
+  },
+  {
+    "name": "setup_explicit_scope_override_user",
+    "description": "B1: --scope user overrides BASH_SOURCE auto-detection — workspace JSON has scope=user and .mcp.json is NOT written.",
+    "input": {
+      "command": "bash",
+      "args": [
+        "skills/setup/scripts/setup.sh",
+        "--workspace-dir",
+        "/tmp/setup-eval-scope-user",
+        "--endpoint",
+        "dev",
+        "--scope",
+        "user",
+        "--non-interactive"
+      ],
+      "setup": {
+        "fixtures": [
+          { "type": "mkdir", "path": "/tmp/setup-eval-scope-user" }
+        ]
+      }
+    },
+    "expected": {
+      "exit_code": 0,
+      "stdout_contains": [
+        "STATUS_OK",
+        "[scope] user (--scope flag)",
+        "[user-scope] skipping .mcp.json"
+      ],
+      "stderr_contains": []
+    },
+    "timeout_ms": 10000
+  },
+  {
+    "name": "setup_stale_template_ref_warn",
+    "description": "A4: existing workspace with templateRef='main' surfaces STATUS_WARN without --reconfigure and does not silently mutate the file.",
+    "input": {
+      "command": "bash",
+      "args": [
+        "skills/setup/scripts/setup.sh",
+        "--workspace-dir",
+        "/tmp/setup-eval-stale",
+        "--endpoint",
+        "local",
+        "--scope",
+        "project",
+        "--non-interactive"
+      ],
+      "setup": {
+        "fixtures": [
+          { "type": "mkdir", "path": "/tmp/setup-eval-stale" },
+          {
+            "type": "write",
+            "path": "/tmp/setup-eval-stale/.seamos-workspace.json",
+            "content": "{\"schemaVersion\":1,\"createdAt\":\"2026-04-01T00:00:00Z\",\"scope\":\"project\",\"ui\":{\"defaultFramework\":null,\"activeSrcPath\":null,\"react\":{\"templateRepo\":\"https://github.com/AGMO-Inc/custom-ui-react-template\",\"templateRef\":\"main\"}},\"marketplace\":{\"endpoint\":\"local\",\"endpointUrl\":\"http://localhost:8088/mcp\"}}\n"
+          }
+        ]
+      }
+    },
+    "expected": {
+      "exit_code": 0,
+      "stdout_contains": [
+        "STATUS_WARN",
+        "templateRef='main'"
+      ],
+      "stderr_contains": [
+        "stale .seamos-workspace.json detected"
+      ]
+    },
+    "timeout_ms": 10000
+  },
+  {
+    "name": "setup_stale_template_ref_migrate",
+    "description": "A4: --reconfigure migrates ui.react.templateRef from 'main' to 'master' and exits STATUS_OK.",
+    "input": {
+      "command": "bash",
+      "args": [
+        "skills/setup/scripts/setup.sh",
+        "--workspace-dir",
+        "/tmp/setup-eval-migrate",
+        "--endpoint",
+        "local",
+        "--scope",
+        "project",
+        "--reconfigure",
+        "--non-interactive"
+      ],
+      "setup": {
+        "fixtures": [
+          { "type": "mkdir", "path": "/tmp/setup-eval-migrate" },
+          {
+            "type": "write",
+            "path": "/tmp/setup-eval-migrate/.seamos-workspace.json",
+            "content": "{\"schemaVersion\":1,\"createdAt\":\"2026-04-01T00:00:00Z\",\"scope\":\"project\",\"ui\":{\"defaultFramework\":null,\"activeSrcPath\":null,\"react\":{\"templateRepo\":\"https://github.com/AGMO-Inc/custom-ui-react-template\",\"templateRef\":\"main\"}},\"marketplace\":{\"endpoint\":\"local\",\"endpointUrl\":\"http://localhost:8088/mcp\"}}\n"
+          }
+        ]
+      }
+    },
+    "expected": {
+      "exit_code": 0,
+      "stdout_contains": [
+        "STATUS_OK",
+        "[migrate] ui.react.templateRef: 'main' → 'master'"
       ],
       "stderr_contains": []
     },

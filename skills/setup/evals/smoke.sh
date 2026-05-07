@@ -61,4 +61,42 @@ skips="$(printf '%s\n' "$out2" | grep -c '\[skip\]')"
 [[ "$skips" -ge 2 ]] || fail "idempotent re-run produced only ${skips} [skip] line(s) (expected >=2)"
 echo "$out2" | tail -n1 | grep -q '^STATUS_OK$' || fail "idempotent re-run last line not STATUS_OK"
 
+# 7. A3 — marketplace.endpointUrl is recorded in workspace JSON (both scopes
+#    must agree on this so upload-app can resolve URL without .mcp.json).
+jq -e '.marketplace.endpointUrl == "https://dev.marketplace-api.seamos.io/mcp"' \
+  "${FIXTURE}/real/.seamos-workspace.json" >/dev/null \
+  || fail "A3: marketplace.endpointUrl missing or wrong in workspace JSON"
+
+# 8. B1 — --scope flag overrides auto-detection.
+mkdir -p "${FIXTURE}/scope-override"
+out_scope="$(bash "$SETUP" --workspace-dir "${FIXTURE}/scope-override" --endpoint dev --scope user --non-interactive)"
+echo "$out_scope" | grep -q '\[scope\] user (--scope flag)' \
+  || fail "B1: --scope user override not honored"
+[[ ! -f "${FIXTURE}/scope-override/.mcp.json" ]] \
+  || fail "B1: user-scope wrote .mcp.json (must skip)"
+
+# 9. A4 — stale ui.react.templateRef='main' surfaces STATUS_WARN without --reconfigure.
+mkdir -p "${FIXTURE}/stale"
+cat > "${FIXTURE}/stale/.seamos-workspace.json" <<'EOF'
+{"schemaVersion":1,"createdAt":"2026-04-01T00:00:00Z","scope":"project",
+ "ui":{"defaultFramework":null,"activeSrcPath":null,
+       "react":{"templateRepo":"https://github.com/AGMO-Inc/custom-ui-react-template","templateRef":"main"}},
+ "marketplace":{"endpoint":"local","endpointUrl":"http://localhost:8088/mcp"}}
+EOF
+out_stale="$(bash "$SETUP" --workspace-dir "${FIXTURE}/stale" --endpoint local --scope project --non-interactive)"
+echo "$out_stale" | tail -n1 | grep -q "^STATUS_WARN: .*templateRef='main'" \
+  || fail "A4: stale templateRef did not surface STATUS_WARN"
+# templateRef must NOT have been modified silently.
+[[ "$(jq -r '.ui.react.templateRef' "${FIXTURE}/stale/.seamos-workspace.json")" == "main" ]] \
+  || fail "A4: stale templateRef was silently mutated without --reconfigure"
+
+# 10. A4 — stale templateRef migrates with --reconfigure.
+out_migrate="$(bash "$SETUP" --workspace-dir "${FIXTURE}/stale" --endpoint local --scope project --reconfigure --non-interactive)"
+echo "$out_migrate" | grep -q "\[migrate\] ui.react.templateRef: 'main' → 'master'" \
+  || fail "A4: --reconfigure did not log [migrate]"
+[[ "$(jq -r '.ui.react.templateRef' "${FIXTURE}/stale/.seamos-workspace.json")" == "master" ]] \
+  || fail "A4: --reconfigure did not migrate templateRef to master"
+echo "$out_migrate" | tail -n1 | grep -q '^STATUS_OK$' \
+  || fail "A4: post-migration final status is not STATUS_OK"
+
 pass
