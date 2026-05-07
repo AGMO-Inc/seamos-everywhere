@@ -2,6 +2,33 @@
 
 All notable changes to **seamos-everywhere** are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [SemVer](https://semver.org/) (pre-1.0: minor bumps signal feature additions, patch bumps signal fixes).
 
+## [0.7.2] — 2026-05-07
+
+Two follow-ups to v0.7.1: a missing OAuth client declaration that prevented the marketplace handshake from completing, plus a migration note for users coming directly from a v0.5.x install.
+
+### Fixed
+- **`mcpServers.seamos-marketplace.oauth.clientId` declared as `"sdm-mcp"`** in `mcp-servers.json`. Claude Code's HTTP MCP OAuth client needs an explicit `client_id` matching the SeamOS Keycloak `sdm-mcp` confidential client (PKCE, loopback redirect; see AGMO-Inc/agmo-auth-system). Without it, the OAuth handshake on the first marketplace MCP call cannot complete because the authorization server has no dynamic-registration path enabled. v0.7.1 shipped without this field, so the brand-new OAuth flow it introduced wouldn't actually start for end users.
+
+### Added
+- **Migration note in `README.md` and CHANGELOG** — explicit instruction to rename or remove stale `sdm_api_url` / `sdm_api_key` (and any other `sdm_*` userConfig key) entries in `~/.claude/settings.json` after upgrading. The `seamos_api_url` value should be kept; `seamos_api_key` should not be added (no longer read by the plugin).
+
+### Why
+A user upgrading directly from v0.5.x to v0.7.1 hit a confusing chain: first the marketplace MCP server appeared registered but every call failed with a malformed URL (stale userConfig key — `${user_config.seamos_api_url}/mcp` collapsed to `/mcp` because the new key didn't exist), then once that was fixed the OAuth handshake itself silently failed (no `client_id` declared). The plugin had no way to surface either failure on its own — `${user_config.X}` substitution returns an empty string for unknown keys, and Claude Code's OAuth client can't infer the right `client_id` without dynamic registration support. v0.7.2 closes both gaps.
+
+### Migration (across v0.5.x → v0.7+)
+1. Open `~/.claude/settings.json`.
+2. Under `pluginConfigs.seamos-everywhere@seamos-plugins.options`, replace any `sdm_api_url` / `sdm_api_key` entry with `seamos_api_url` only — keep just the URL value:
+   ```json
+   "pluginConfigs": {
+     "seamos-everywhere@seamos-plugins": {
+       "options": {
+         "seamos_api_url": "https://dev.marketplace-api.seamos.io"
+       }
+     }
+   }
+   ```
+3. Restart Claude Code. The first marketplace MCP call opens a browser for one-time SeamOS OAuth login.
+
 ## [0.7.1] — 2026-05-06
 
 Marketplace authentication switches from a static `X-API-Key` header to OAuth 2.1 (PKCE). MCP calls go through Claude Code's standard HTTP MCP client, which receives an RFC 9728 protected-resource-metadata challenge and runs OAuth discovery → browser login → token cache automatically. Multipart uploads use a one-time `ut_*` token returned in the `create_app` / `update_app` MCP responses, sent as `Authorization: Bearer` (5-minute TTL, single-use, bound to the appId). User-side change is minimal — a one-time browser login on the first MCP call, fully automatic afterward.
