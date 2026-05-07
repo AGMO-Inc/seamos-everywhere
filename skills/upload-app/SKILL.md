@@ -16,7 +16,7 @@ Before running this skill, the user's project must have:
 1. **At least one workspace marker** at project root (USER_ROOT). One of:
    - `.seamos-workspace.json` with `marketplace.endpointUrl` (written by `setup` for both project and user scope) — **preferred**.
    - `.mcp.json` with `mcpServers.seamos-marketplace.url` (project-scope only — written by `setup` when scope=project).
-   - Plugin-registered `mcp-servers.json` + `userConfig.seamos_api_url` (user-scope; resolved by Claude Code at MCP server spawn time).
+   - Plugin-registered `mcp-servers.json` (user-scope; v0.7.5+ embeds the dev URL directly — registered automatically on plugin install).
 2. `seamos-assets/` directory at project root with the required files.
 
 Authentication is OAuth (PKCE) — the first MCP call triggers a one-time browser login; no API key required. If the user has not yet run `setup`, do that first; do NOT instruct them to hand-author `.mcp.json`.
@@ -62,7 +62,7 @@ bash skills/upload-app/scripts/resolve-marketplace-url.sh "$USER_ROOT"
 Priority order (first success wins, `/mcp` suffix stripped automatically):
 1. `.seamos-workspace.json` → `.marketplace.endpointUrl` (preferred — written by `setup` for both project and user scope; uniform across scope).
 2. `.mcp.json` → `.mcpServers["seamos-marketplace"].url` (project-scope fallback). For older 0.7.x stdio templates, the helper also pulls the last URL arg from `args[]`.
-3. `CLAUDE_MCP_SEAMOS_URL` env var (set by Claude Code when the plugin's `mcp-servers.json` + `userConfig` registers the MCP server at runtime). When the env var is absent but the running session still has `mcp__seamos-marketplace__create_app` registered, Step 1A's `create_app` response itself carries the canonical endpoint — use that and skip file parsing entirely.
+3. `CLAUDE_MCP_SEAMOS_URL` env var (legacy fallback — set by Claude Code in some configurations when the plugin's `mcp-servers.json` registers the MCP server at runtime). When the env var is absent but the running session still has `mcp__seamos-marketplace__create_app` registered, Step 1A's `create_app` response itself carries the canonical endpoint — use that and skip file parsing entirely.
 4. **None of the above** → helper exits 64 with a remediation hint. Surface it: tell the user to run the `setup` skill first, or `setup --reconfigure` if `.seamos-workspace.json` is stale and missing `marketplace.endpointUrl`. Do **not** ask the user to hand-author `.mcp.json`.
 
 The MCP-level OAuth token is managed by Claude Code automatically; no API key extraction is needed here.

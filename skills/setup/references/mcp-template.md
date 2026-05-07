@@ -4,7 +4,7 @@ This document explains the project-scope `.mcp.json` template that `setup` write
 
 ## Why stdio + mcp-remote
 
-`setup` writes the project-scope MCP entry as a **stdio transport invoking `npx mcp-remote`** rather than a direct `type: http` entry. Two reasons drive this choice: (1) stdio is Claude Code's most reliable MCP transport for stateless Streamable HTTP backends — `type: http` auth has been inconsistent across Claude Code versions; (2) it intentionally diverges from the plugin's own user-scope `mcp-servers.json` (which uses `type: http` with `${user_config.*}` substitution because Claude Code's plugin install flow handles auth there) — the two scopes solve different problems and the project-scope file must be self-contained without relying on `userConfig`.
+`setup` writes the project-scope `.mcp.json` only when the user picks an endpoint other than the plugin's built-in default (or invokes `--reconfigure`). It uses **stdio transport invoking `npx mcp-remote`** rather than a direct `type: http` entry for two reasons: (1) stdio is Claude Code's most reliable MCP transport for stateless Streamable HTTP backends — `type: http` auth has been inconsistent across Claude Code versions; (2) project-scope `.mcp.json` must be self-contained — the URL is baked in at write time so the entry works regardless of plugin install state. As of v0.7.5 the plugin's user-scope `mcp-servers.json` embeds the dev URL directly (no `userConfig` placeholder), so the project-scope override is only meaningful when overriding to local/prod/custom.
 
 The marketplace backend authenticates with OAuth 2.1 (PKCE). On the first request, `mcp-remote` receives a `401` with an RFC 9728 `WWW-Authenticate` challenge, runs OAuth discovery → PKCE → loopback redirect → browser login, and caches the access token locally for subsequent calls. No API key is sent.
 
@@ -30,12 +30,12 @@ Note: `setup` defaults to `dev`. Other endpoints are advanced — passed via `--
 | | Project scope | User scope |
 |---|---|---|
 | Plugin location | repo clone | `~/.claude/plugins/...` |
-| MCP registration | `setup` writes `${USER_ROOT}/.mcp.json` (this template) | Plugin auto-registers via `mcp-servers.json` + `userConfig` |
+| MCP registration | `setup` writes `${USER_ROOT}/.mcp.json` only when overriding endpoint (this template) | Plugin auto-registers via `mcp-servers.json` (dev URL embedded, zero-config) |
 | Server name | `seamos-marketplace` | `seamos-marketplace` (same) |
 | Transport | stdio + `npx mcp-remote` | http (direct) |
 | Auth bootstrap | first tool call → OAuth (PKCE) via `mcp-remote` | first tool call → OAuth (PKCE) via Claude Code's HTTP MCP client |
 
-Note: `setup` detects scope via `${BASH_SOURCE[0]}`. In user scope, `setup` does NOT write `.mcp.json` — it only verifies the plugin's auto-registration is in place and outputs guidance.
+Note: `setup` detects scope via `${BASH_SOURCE[0]}` (with `installed_plugins.json` overriding). In user scope, `setup` does NOT write `.mcp.json` — the plugin's `mcp-servers.json` already registers the marketplace MCP at install time with the dev URL embedded (v0.7.5+). Project scope only writes `.mcp.json` when the user picks a non-default endpoint.
 
 ## Migration: `sdm-marketplace` → `seamos-marketplace`
 

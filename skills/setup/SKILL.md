@@ -33,19 +33,11 @@ Do not invoke while any of the 4 above are still ambiguous. Marketplace authenti
 
 누락 시 비차단 안내만 — 실 차단은 의존 스킬(`create-project`) 시점에 발생한다.
 
-### Plugin userConfig (user-scope only)
+### Plugin MCP 자동 등록 (zero-config)
 
-User scope 설치에서는 plugin 이 `mcp-servers.json` + `userConfig.seamos_api_url` 로 MCP 서버를 자동 등록한다. **`/plugin install` 직후 `seamos_api_url` 이 비어있으면** placeholder 가 unresolved 상태로 남아 MCP 서버 spawn 자체가 실패하며, 이 상황은 setup 출력에서 `STATUS_WARN: userConfig 'seamos_api_url' empty` 로 노출된다.
+v0.7.5 부터 plugin 의 `mcp-servers.json` 이 dev 마켓플레이스 URL (`https://dev.marketplace-api.seamos.io/mcp`) 을 직접 박아두므로 **install 직후 별도 설정 없이 MCP 서버가 동작한다.** 첫 마켓플레이스 호출에서 OAuth (PKCE) 브라우저 로그인이 한 번 뜨고, 그 이후부터 `mcp__seamos-marketplace__*` 도구가 그대로 사용된다.
 
-해결:
-```
-/plugin config seamos-everywhere
-# seamos_api_url 에 dev → https://dev.marketplace-api.seamos.io
-#                local → http://localhost:8088
-#                혹은 사용자 endpoint
-```
-
-설정 후 `setup` 재실행하지 않아도 다음 MCP 호출부터 등록된다.
+dev 가 아닌 endpoint (local/prod/custom) 를 쓰려면 setup 의 `--endpoint` 로 project-scope `.mcp.json` 을 작성해 plugin 기본값을 override 한다 — Claude Code 가 project-scope `.mcp.json` 을 user-scope plugin 등록보다 우선시한다.
 
 ## Scope Resolution
 
@@ -79,7 +71,7 @@ setup 의 산출물:
 | `${USER_ROOT}/seamos-assets/builds/` | both | build-fif 출력 캐시 |
 | `${USER_ROOT}/seamos-assets/screenshots/` | both | upload-app 스크린샷 자료 |
 
-User scope 에서 MCP 서버는 플러그인이 `mcp-servers.json` + `userConfig` 로 자동 등록하므로 `.mcp.json` 을 작성하지 않는다.
+User scope 에서 MCP 서버는 플러그인이 `mcp-servers.json` 으로 자동 등록 (dev URL 내장) 하므로 `.mcp.json` 을 작성하지 않는다. project scope 의 `.mcp.json` 은 endpoint override 가 필요한 경우에만 의미가 있다.
 
 ## Execution Flow
 
@@ -89,7 +81,7 @@ User scope 에서 MCP 서버는 플러그인이 `mcp-servers.json` + `userConfig
 4. **Project scope only — write `.mcp.json`** — substitute the endpoint URL into `assets/.mcp.json.template` and write to `${USER_ROOT}/.mcp.json` (stdio + `npx mcp-remote`; OAuth runs automatically on the first call). If the file already exists and `--reconfigure` is not set → skip + diff notice.
 5. **`.seamos-workspace.json` 작성** — `jq -n` 으로 schema 작성. **두 scope 모두에서 `marketplace.endpoint` + `marketplace.endpointUrl` 을 항상 기록** (A3 — upload-app 의 URL discovery 폴백 source). 기존 파일 발견 시 schemaVersion 호환 확인 + stale `ui.react.templateRef == "main"` 감지 시 `--reconfigure` 호출에서 자동 마이그레이션 (A4).
 6. **Preflight 도구 점검** — `docker`, `jq`, `shasum` / `sha256sum`, `timeout` / `gtimeout` 존재 확인. 누락 시 비차단 안내 (실 차단은 `create-project` 시점).
-7. **User scope only — MCP 안내 (조건부, C5)** — `~/.claude/settings*.json` 에서 `seamos_api_url` userConfig 값을 best-effort 로 검사. 비어있으면 `STATUS_WARN: userConfig 'seamos_api_url' empty` + `/plugin config` 안내. 값이 있으면 "delegated to plugin" + `/mcp` 검증 안내 출력. **"auto-registered" 라고 단언하지 않는다.**
+7. **User scope only — MCP 안내** — plugin 이 `mcp-servers.json` (dev URL 내장) 으로 자동 등록함을 안내하고 `/mcp` 로 검증하도록 가이드. v0.7.5 부터 zero-config 라 별도 userConfig 입력이 필요 없다.
 8. **Final status** — 마지막 줄에 `STATUS_OK` 또는 `STATUS_WARN: <reason1>; <reason2>` (다중 사유 join) / `STATUS_ERR: <reason>` 머신가독 라인.
 
 ## Important Notes

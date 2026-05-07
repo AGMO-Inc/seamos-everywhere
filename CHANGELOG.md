@@ -2,6 +2,25 @@
 
 All notable changes to **seamos-everywhere** are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [SemVer](https://semver.org/) (pre-1.0: minor bumps signal feature additions, patch bumps signal fixes).
 
+## [0.7.5] — 2026-05-07
+
+**Zero-config plugin install.** 0.7.4 까지 사용자가 plugin install 직후 `/plugin config seamos-everywhere` 로 `seamos_api_url` 을 직접 입력해야 첫 MCP 호출이 동작했다. 이는 일반 사용자에게 마찰이고, 0.7.1 워크스루에서도 외부 의존(B2 — Claude Code 본체가 install 시 userConfig prompt 를 안 띄우는 문제) 을 우회 못 해 STATUS_WARN 안내로만 처리해뒀던 부분. 0.7.5 는 마찰 자체를 제거 — plugin 의 `mcp-servers.json` 이 dev 마켓플레이스 URL 을 직접 박아두고, `userConfig.seamos_api_url` 정의는 통째 제거한다. install 즉시 OAuth 기반 마켓플레이스 도구가 동작.
+
+### Changed — Zero-config MCP
+- **`mcp-servers.json`** — `seamos-marketplace.url` 을 `${user_config.seamos_api_url}/mcp` placeholder 에서 `https://dev.marketplace-api.seamos.io/mcp` (dev URL 직접) 로 교체. user-scope plugin install 의 zero-config 보장.
+- **`.claude-plugin/plugin.json`** — `userConfig` 블록 통째 제거. user-scope settings 에 install/uninstall 시 잔존하는 entry 가 더 이상 없다 — 사용자 지적: `userConfig` default 는 user scope 에 박히므로 project-scope 격리 실패. mcp-servers.json 하드코딩이 가장 깔끔.
+- **`skills/setup/scripts/setup.sh`** — Step 7 의 `seamos_api_url` userConfig empty 검사 + `STATUS_WARN: userConfig 'seamos_api_url' empty` 분기 제거. user-scope 시 단순히 "plugin auto-registers (dev URL embedded), `/mcp` 로 검증" 안내만 출력.
+- **`skills/setup/SKILL.md`** — "Plugin userConfig (user-scope only)" 섹션을 "Plugin MCP 자동 등록 (zero-config)" 로 교체. Asset Convention / Execution Flow 의 user-scope 안내 갱신.
+- **`skills/setup/references/mcp-template.md`** — User scope vs Project scope 비교표의 "Plugin auto-registers via mcp-servers.json + userConfig" 를 "(dev URL embedded, zero-config)" 로 갱신. project-scope `.mcp.json` 의 의미를 "endpoint override 가 필요한 경우" 로 좁힘.
+- **`skills/upload-app/SKILL.md` / `scripts/resolve-marketplace-url.sh`** — `mcp-servers.json + userConfig` 표현을 `mcp-servers.json` (dev URL embedded) 로 정리. `CLAUDE_MCP_SEAMOS_URL` env var 경로는 legacy fallback 으로 유지 (제거 시 이득 없음).
+- **`README.md`** — Configuration 섹션을 "Zero-config" 로 재작성. `seamos_api_url` 표 항목 제거 + endpoint override 흐름 설명. 0.5.x → 0.7.x 마이그레이션 가이드를 0.7.5 기준으로 갱신.
+
+### Fixed — Implicit
+- **B2 (0.7.1 워크스루 외부 의존 항목)** — `/plugin install` 시 Claude Code 본체가 required `userConfig` prompt 를 띄우지 않던 문제. 0.7.5 에서 `userConfig` 자체가 사라졌으므로 이슈 자체가 무의미해짐 — 별도 외부 PR 트래킹 종료.
+
+### Migration
+v0.5.x – v0.7.4 사용자: `~/.claude/settings.json` 의 `pluginConfigs.seamos-everywhere@seamos-plugins.options.seamos_api_url` entry 는 더 이상 읽히지 않는다. 그대로 두어도 무해 — 다음 settings 편집 시 청소만 권장. project 별로 다른 endpoint 를 쓰던 사용자는 `setup --endpoint <URL>` 로 project-scope `.mcp.json` 을 작성하면 된다 (이전과 동일).
+
 ## [0.7.4] — 2026-05-07
 
 0.7.1 pluginTest71 워크스루 (CPP / IMU angle viewer 를 새 워크스페이스에서 setup → create-project → init-customui → 코드 → run-app → build-fif → upload-app 까지 돌려본 end-to-end) 에서 발견된 14건 함정 중 우리 측 책임 11건을 일괄 픽스. 외부 의존 3건(B2 plugin install userConfig prompt, B3 custom-ui-react-template repo, C2 marketplace name alias)은 우리 측 안내만 강화하고 별도 트랙으로 처리.

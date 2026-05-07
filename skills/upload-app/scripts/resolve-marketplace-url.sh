@@ -6,8 +6,8 @@
 #
 #   1. .seamos-workspace.json -> .marketplace.endpointUrl   (preferred)
 #   2. .mcp.json              -> .mcpServers["seamos-marketplace"].url
-#   3. CLAUDE_MCP_SEAMOS_URL env var (set by Claude Code when the plugin's
-#      mcp-servers.json + userConfig is registered at runtime)
+#   3. CLAUDE_MCP_SEAMOS_URL env var (legacy fallback — set by some Claude
+#      Code configurations when the plugin's mcp-servers.json is registered)
 #   4. None of the above → exit 64 with a clear remediation message
 #
 # All retrieved URLs have any trailing /mcp stripped to yield a base URL like
@@ -71,7 +71,7 @@ if [[ -f "$MJ" ]] && command -v jq >/dev/null 2>&1; then
   fi
 fi
 
-# 3) Env var (set by Claude Code when MCP server registered via plugin userConfig)
+# 3) Env var (legacy fallback for older Claude Code MCP registration paths)
 if [[ -n "${CLAUDE_MCP_SEAMOS_URL:-}" ]]; then
   strip_mcp_suffix "$CLAUDE_MCP_SEAMOS_URL"
   exit 0

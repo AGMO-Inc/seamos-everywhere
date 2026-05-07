@@ -6,7 +6,7 @@
 
 **Claude Code plugin for the SeamOS AI Native developer ecosystem**
 
-[![Version](https://img.shields.io/badge/version-0.7.4-blue.svg)](https://github.com/AGMO-Inc/seamos-everywhere/releases)
+[![Version](https://img.shields.io/badge/version-0.7.5-blue.svg)](https://github.com/AGMO-Inc/seamos-everywhere/releases)
 [![Skills](https://img.shields.io/badge/skills-12-orange.svg)](#skills)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey.svg)](LICENSE)
 [![Org](https://img.shields.io/badge/org-AGMO--Inc-green.svg)](https://github.com/AGMO-Inc)
@@ -46,15 +46,21 @@ claude --plugin-dir ./seamos-everywhere
 
 ## Configuration
 
-After installation, configure the marketplace endpoint:
+**Zero-config (v0.7.5+).** Plugin install registers the marketplace MCP server with the dev endpoint (`https://dev.marketplace-api.seamos.io`) embedded — no `seamos_api_url` to set. The first marketplace MCP call (`list_apps`, `create_app`, …) triggers Claude Code's standard OAuth (PKCE) flow: a browser opens, you sign in to SeamOS once, and the access token is cached locally. Multipart uploads (`upload-app`, `update-app`) additionally use a one-time `ut_*` token issued per request by the backend.
 
-| Key | Description |
-|-----|-------------|
-| `seamos_api_url` | SeamOS API base URL (e.g., `https://dev.marketplace-api.seamos.io`) |
+### Endpoint override (optional)
 
-The first marketplace MCP call (e.g., `list_apps`, `create_app`) triggers Claude Code's standard OAuth (PKCE) flow — a browser opens, you sign in to SeamOS once, and the access token is cached locally. Multipart uploads (`upload-app`, `update-app`) additionally use a one-time `ut_*` token issued per request by the backend.
+To use a different endpoint (local backend, prod, self-hosted), run `setup` with `--endpoint`:
 
-> **Upgrading from v0.5.x or v0.6.x?** Open `~/.claude/settings.json` and rename any stale `sdm_api_url` / `sdm_api_key` (and other `sdm_*`) entries under `pluginConfigs.seamos-everywhere@seamos-plugins.options` to `seamos_api_url` only — keep the URL value, do NOT add `seamos_api_key` (no longer used). Without this, `${user_config.seamos_api_url}` substitutes to empty and the marketplace URL collapses to `/mcp`.
+```bash
+# Project-scope override → writes ${USER_ROOT}/.mcp.json with the chosen endpoint
+setup --endpoint local                                     # http://localhost:8088
+setup --endpoint https://your-marketplace.example.com      # custom URL
+```
+
+Project-scope `.mcp.json` takes precedence over the plugin's user-scope MCP registration.
+
+> **Upgrading from v0.5.x – v0.7.4?** v0.7.5 removes the `seamos_api_url` userConfig entirely. If your `~/.claude/settings.json` still has it, you can delete the entry — it's no longer read. The dev URL is now embedded in the plugin's `mcp-servers.json`.
 
 ---
 

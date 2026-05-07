@@ -2,7 +2,7 @@
   "mcpServers": {
     "seamos-marketplace": {
       "type": "http",
-      "url": "${user_config.seamos_api_url}/mcp",
+      "url": "https://dev.marketplace-api.seamos.io/mcp",
       "oauth": {
         "clientId": "sdm-mcp"
       }
