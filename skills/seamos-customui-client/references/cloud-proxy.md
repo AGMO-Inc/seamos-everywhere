@@ -132,22 +132,41 @@ unwraps it, forwards through the Cloud plugin, and routes the response back.
 Knowing the contract here helps you debug "why isn't my response coming back"
 without reading the SDK source.
 
-### Key rename: UI envelope → proxy envelope
+### Key rename: UI envelope → proxy envelope (project-dependent!)
 
-The browser uses keys that read naturally to UI authors (`endPoint`,
-`methodSelect`). The Cloud proxy on the device speaks a different vocabulary
-(`externalUrl`, `method`). The app translates between them:
+This is the part where two real projects disagree. **Check the backend
+service before settling on UI envelope keys.**
 
-| UI envelope (this skill) | Cloud proxy envelope (backend) |
-|--------------------------|--------------------------------|
-| `endPoint`               | `externalUrl`                  |
-| `methodSelect`           | `method`                       |
-| `reqHeader`              | `header`                       |
-| `reqBody`                | `msg`                          |
-| `correlation-id`         | `correlation-id` (passed through) |
+**Convention A — UI uses friendly aliases, app renames** (C++ reference
+`cpp_deploy_test_19`):
 
-If the app receives an envelope without a `correlation-id`, it generates one
-of the form `WS{epoch_ms}` (or `HTTP{epoch_ms}` — see below).
+| UI envelope        | Cloud proxy envelope |
+|--------------------|----------------------|
+| `endPoint`         | `externalUrl`        |
+| `methodSelect`     | `method`             |
+| `reqHeader`        | `header`             |
+| `reqBody`          | `msg`                |
+| `correlation-id`   | `correlation-id`     |
+
+**Convention B — UI sends backend keys directly, no rename** (Java reference
+`agnote-core`): UI just sends `externalUrl`, `method`, `header`, `msg`,
+`correlation-id`. The service forwards verbatim. This is simpler — start
+here unless you're targeting a backend that already speaks Convention A.
+
+If you don't know which the backend uses, grep its service class for
+`endPoint` (Convention A) or only `externalUrl` (Convention B). The
+"why isn't my response coming back" failure mode below is almost always
+"UI sent `endPoint` but backend reads `externalUrl`" or vice versa.
+
+If the app receives an envelope without a `correlation-id`, behaviour
+depends on the backend:
+- C++ reference: generates `WS{epoch_ms}` / `HTTP{epoch_ms}` and uses the
+  prefix to dispatch responses.
+- Java reference (`agnote-core`): expects the **service** to generate a
+  UUID v4 before calling `uploadData`. UI shouldn't omit it on the
+  WebSocket path either — agnote's listener uses `PendingRequestRegistry`
+  to demux by id, so a missing id falls into the untyped passthrough
+  branch and the UI may not recognise the frame.
 
 ### Two backend dispatch patterns
 
@@ -165,12 +184,26 @@ backend route the UI hits with plain `fetch('/extApi', ...)` instead of
 opening a WebSocket — useful when you want one round-trip without managing
 a WS pending-map.
 
-### Response envelope (incoming, again)
+### Response envelope (incoming) — frame shape varies by backend
 
-The cloud returns `{ data, correlation-id }`. The app re-wraps it as the
-`external_api_response` frame documented above before publishing to the WS.
-The `data` field is the upstream response body, **already JSON-parsed by
-the app**.
+The cloud returns `{ data, correlation-id }` to the app. **The app then
+re-wraps it before broadcasting**, and the wrapper differs across
+projects:
+
+| Backend reference | WS frame the UI sees |
+|-------------------|----------------------|
+| C++ (`cpp_deploy_test_19`) | `{"type":"external_api_response","correlation-id":"<id>","data":<body>}` |
+| Java (`agnote-core`) | `{"type":"EXT-<domain>","data":<body>}` — no `correlation-id`, type carries the routing info |
+
+UI dispatch should branch on `frame.type`:
+- `"external_api_response"` → look up `frame['correlation-id']` in the
+  pending-map (the snippet in the previous section).
+- `"EXT-…"` → match by `type` (e.g. `"EXT-weather"`, `"EXT-fuel"`) and
+  feed `frame.data` into the appropriate domain handler. There's no
+  per-request id to match against — the broadcast is fan-out.
+
+In both cases `data` is **already JSON-parsed by the app** — don't
+`JSON.parse` again.
 
 ### When you suspect the backend, not the UI
 

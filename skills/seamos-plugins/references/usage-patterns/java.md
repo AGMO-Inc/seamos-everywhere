@@ -92,12 +92,14 @@ canAllynav.addPropertyChangeListener(event -> {
 Platform_Service uses a different pattern — method invocation instead of getter/setter.
 
 ```java
-// Cloud — uploadData takes (data, importance)
-Cloud.getInstance().uploadData(dataString, 1);
-//                                          ↑
-// Second arg = importance (priority). Conventionally fixed at 1.
-// The Cloud channel uses it to bucket queued outbound traffic; vary it
-// only with a deliberate reason — most apps just pass 1.
+// Cloud — uploadData takes (data, priority, connectionType) and returns
+// a String ack from the cloud channel (NOT the upstream HTTP body).
+String ack = Cloud.getInstance()
+        .uploadData(dataString, 2, ConnectionTypeEnum.WIFI);
+//                              ↑   ↑
+//   priority: 1=High / 2=Medium (default in agnote-core) / 3=Low
+//                                  ↑
+//   ConnectionTypeEnum.{WIFI, SATELLITE} — defaults to WIFI
 
 Cloud.getInstance().uploadFile(filePath);
 Cloud.getInstance().download(targetPath);
