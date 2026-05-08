@@ -49,7 +49,7 @@ Wraps the seamos-backend API. Handles app publishing to the SeamOS marketplace.
 | `get_app_status` | APP_READ | Get app detail and version deployment status |
 | `create_app` | APP_DEPLOY | Get REST endpoint info for creating a new app |
 | `update_app` | APP_DEPLOY | Get REST endpoint info for uploading a new version |
-| `edit_app_metadata` | APP_WRITE | Edit app metadata (name, description, category, etc.) |
+| `edit_app_metadata` | APP_WRITE | Edit app metadata (name, description, categories, deviceTypes, etc.) |
 
 ## AI Development Pipeline
 

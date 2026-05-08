@@ -2,6 +2,48 @@
 
 All notable changes to **seamos-everywhere** are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [SemVer](https://semver.org/) (pre-1.0: minor bumps signal feature additions, patch bumps signal fixes).
 
+## [0.7.8] — 2026-05-08
+
+**Marketplace category taxonomy 갱신 + `deviceTypes` 신규 필드 반영.** backend 의 `create_app` 라이브 스키마를 직접 조회한 결과, `categories` enum 값 5개가 모두 새 이름으로 교체됐고 (`AGRICULTURE`, `CONSTRUCTION`, `DRONE`, `DIAGNOSTICS`, `MATERIALS` → `EASY_WORK`, `FARM_MANAGEMENT`, `DEVICE_MANAGEMENT`, `ENTERTAINMENT`, `TEST`), 호환 기기 타입을 명시하는 `deviceTypes` enum 배열이 신규 required 필드로 추가됨. `upload-app` 스킬과 reference 가 옛 enum 으로 안내하고 있어 따라 짠 사용자는 backend 가 reject. 그 갭을 닫는다.
+
+### Fixed — `upload-app` 옛 enum 안내로 인한 업로드 reject
+
+- **`skills/upload-app/references/config-enum-values.md`** — `categories` 표 5개 신규 값으로 교체 (`EASY_WORK` / `FARM_MANAGEMENT` / `DEVICE_MANAGEMENT` / `ENTERTAINMENT` / `TEST`). required 조건을 "최소 1" → **"`isForTest=false` 일 때 required 최소 1"** 로 정정 (테스트 빌드는 optional).
+- **`skills/upload-app/SKILL.md` Step 3A-5 (field guide 출력)** — "Options: CONSTRUCTION, AGRICULTURE, ..." 하드코드 → 신규 enum 으로 교체 + `deviceTypes` / `ownershipType` Options 도 함께 노출. "Always parse enum values from the live schema's `itemSchema.type` / `type` string rather than hardcoding" 원칙을 명문화 — backend 가 또 enum 을 바꿔도 코드 수정 없이 따라가도록.
+- **`skills/upload-app/SKILL.md` Step 3B-2 (validation)** — required 분류를 *always* (`info`, `variants`) 와 *`isForTest=false` 일 때만* (`email`, `phoneNumber`, `categories`, `deviceTypes`, `pricingType`, `countries`, `languages`) 로 분리. `deviceTypes` enum 검증 추가. "live schema disagrees → schema wins" 명시.
+- **`skills/upload-app/SKILL.md` Step 3B-3 (confirm summary)** — 업로드 전 요약 출력에 `호환 기기 타입` 라인 추가. feuType 라인 라벨도 `기기 (feuType)` 로 명확화 (deviceTypes 와 헷갈리지 않도록).
+
+### Added — 신규 enum 필드 2개
+
+- **`deviceTypes` (array of enum, `isForTest=false` 일 때 required)** — 앱이 호환되는 농기계 타입. 값: `TRACTOR` / `RICE_TRANSPLANTER` / `CULTIVATOR` / `COMBINE` / `MULTI_CULTIVATOR`. `references/config-template.json` 에 빈 배열 placeholder 추가, `config-enum-values.md` 에 의미 표 추가.
+- **`ownershipType` (string enum, optional)** — 앱 소유권 타입. 값: `ORGANIZATION` / `DEVELOPER`. backend 기본값 사용 시 생략 가능. `config-template.json` / `config-enum-values.md` 에 추가.
+
+### Changed — 마이그레이션 안내 (Step 3B-2a) 2-Case 로 확장
+
+옛 단수 `category` 필드 안내 1건 → 두 가지 부적합 케이스로 분리. 둘 다 자동 변환 금지 — 사용자 의도를 추측해야 하기 때문.
+
+1. **단수→복수**: `config.json` 에 `category` (string) 가 있으면 deprecated 안내 + `categories` (array) 변환 가이드. backend 는 아직 받지만 schema 가 명시적으로 `deprecated - use categories` 라고 표기.
+2. **옛 enum 값**: `AGRICULTURE` / `CONSTRUCTION` / `DRONE` / `DIAGNOSTICS` / `MATERIALS` 가 발견되면 stop. 후보 매핑 힌트만 제시:
+   - `AGRICULTURE` → `FARM_MANAGEMENT` (가장 가까움)
+   - `DIAGNOSTICS` → `DEVICE_MANAGEMENT`
+   - `CONSTRUCTION` / `DRONE` / `MATERIALS` → 직접 후속 없음, 사용자 판단
+
+자동 변환을 끝내 거부하는 이유는 `CONSTRUCTION` 같은 값은 깔끔한 successor 가 없고, `AGRICULTURE → FARM_MANAGEMENT` 도 추측이라 사용자 확인이 필수라서.
+
+### Changed — 문서 표기 정정
+
+- **`CLAUDE.md`** SeamOS MCP Tools 표의 `edit_app_metadata` 설명: `category` (단수, 옛 표기) → `categories, deviceTypes` (현행 복수 + 신규 필드 반영).
+
+### Why now (사용자 학습 동기)
+
+사용자가 "카테고리 명이 바뀌었어, 직접 mcp 조회해서 봐줄 수 있어?" 라고 요청. `mcp__seamos-marketplace__create_app` 라이브 호출로 받은 스키마 응답을 SSOT 로 흡수. v0.7.7 까지의 enum (`AGRICULTURE` 등 5개) 은 backend 가 더 이상 받지 않으며, `deviceTypes` 신규 필드가 빠지면 `isForTest=false` 업로드는 reject. v0.7.8 은 그 갭을 닫는다.
+
+### Notes
+
+- 코드 변경 없음 — 스킬 문서 / reference / 템플릿만. 회귀 위험 없음.
+- 정적 fallback 도 갱신했지만 **라이브 스키마가 항상 SSOT**. backend 가 또 enum 을 바꾸면 fallback 보다 live 응답을 우선하라는 원칙을 SKILL.md 에 명시.
+- `update-app` 스킬은 metadata 를 안 다루므로 수정 없음 (categories/deviceTypes 편집은 `edit_app_metadata` 경로).
+
 ## [0.7.7] — 2026-05-08
 
 **Java External API SSOT 정정 — `agnote-core` 흡수.** v0.7.6 의 Java External API 섹션은 C++ 매핑에 의존한 *근사치* 였음. 사용자가 `~/Desktop/Backend/agnote-core` (실제 Java NEVONEX 앱) 를 가리키며 "이걸로 진짜 진행 가능한 상태인지" 물어 갭이 드러남. 그 코드를 SSOT 로 흡수해서 Java 측을 처음부터 검증된 패턴으로 갈아끼움.

@@ -132,7 +132,7 @@ When `config.json` doesn't exist yet:
    - **Example values from schema** — for non-enum fields, if the schema provides an `example` value, use it as the default. Example: `"email": "sksjsksh22@gmail.com"`, `"feuType": "AUTO-IT_RV-C1000, RCU4-3Q/20, RCU4-3X/10"`. This lets users see the expected format and replace with their own values.
 3. **Fallback** — if Step 1A failed (MCP server unreachable), read the static template from `skills/upload-app/references/config-template.json` instead. The fallback template intentionally leaves all enum-typed fields as empty strings (`""`) and arrays as `[]` so it cannot be silently uploaded with placeholder values; consult `references/config-enum-values.md` for the valid values when filling them in.
 4. **Write** the generated JSON to `seamos-assets/config.json`
-5. **Show field guide** — list each field with its description, type, required/optional status, and enum values (if any) from the schema. Group by required first, then optional. For enum fields, prominently display all valid options (e.g., "Options: CONSTRUCTION, AGRICULTURE, DRONE, ENTERTAINMENT, DIAGNOSTICS, MATERIALS") so the user can pick the correct value.
+5. **Show field guide** — list each field with its description, type, required/optional status, and enum values (if any) from the schema. Group by required first, then optional. For enum fields, prominently display all valid options (e.g., `categories`: "Options: EASY_WORK, FARM_MANAGEMENT, DEVICE_MANAGEMENT, ENTERTAINMENT, TEST"; `deviceTypes`: "Options: TRACTOR, RICE_TRANSPLANTER, CULTIVATOR, COMBINE, MULTI_CULTIVATOR"; `ownershipType`: "Options: ORGANIZATION, DEVELOPER") so the user can pick the correct value. Always parse enum values from the live schema's `itemSchema.type` / `type` string rather than hardcoding — backend may add or remove options.
 6. **STOP here** — do not proceed to upload. The user needs to fill in the config first.
 
 ### Step 3B: Schema Diff & Validation
@@ -163,25 +163,42 @@ If the MCP schema was unavailable (Step 1A failed), skip the diff and proceed wi
 
 #### 3B-2. Validate Required Fields
 
-1. Check required fields are present and non-empty:
-   - `email`, `phoneNumber`, `categories`, `pricingType`, `countries`, `languages`, `info`, `variants`
-   - `categories` must be a non-empty array of enum values (`AGRICULTURE | CONSTRUCTION | DRONE | ENTERTAINMENT | DIAGNOSTICS | MATERIALS`)
+1. Check required fields are present and non-empty (see `references/config-enum-values.md` for the SSOT enum lists):
+   - Always required: `info`, `variants`
+   - Required when `isForTest=false`: `email`, `phoneNumber`, `categories`, `deviceTypes`, `pricingType`, `countries`, `languages`
+   - `categories` must be a non-empty array of enum values (`EASY_WORK | FARM_MANAGEMENT | DEVICE_MANAGEMENT | ENTERTAINMENT | TEST`)
+   - `deviceTypes` must be a non-empty array of enum values (`TRACTOR | RICE_TRANSPLANTER | CULTIVATOR | COMBINE | MULTI_CULTIVATOR`)
+   - `ownershipType` (optional) must be `ORGANIZATION | DEVELOPER` if present
    - Each item in `info` must have `locale`, `appName`, `shortDescription`, `detailDescription`
    - Each item in `variants` must have `feuType`, `version`, and `info` array (each with `locale`, `title`, `updateDescription`)
+   - Authoritative enum values come from Step 1A's live schema (`itemSchema.type` / `type`). The lists above mirror the values observed at the time of writing — if the live schema disagrees, the schema wins and the user should be prompted with the schema's options.
 2. Cross-check: each `feuType` in variants should have a matching `.fif` file in `builds/`
 3. If validation fails → show which fields are missing/invalid and stop
 
-#### 3B-2a. Legacy `category` field migration hint
+#### 3B-2a. Legacy `category` field & retired enum migration hint
 
-If the existing `config.json` contains a legacy `category` (string) instead of `categories` (array), **do not auto-convert**. Instead, surface this guidance and stop:
+Two breaking changes have shipped on the marketplace schema. **Do not auto-convert** in either case — surface the guidance and stop, because the user's original intent (which domain(s) the app belongs to, single vs. multi-category) cannot be inferred safely.
+
+**Case 1 — legacy single-string `category`:** if `config.json` has a `category` (string) field, the API still accepts it but marks it `deprecated`. Move to `categories` (array):
 
 ```
-config.json has legacy `category` (string). API now expects `categories` (array of strings).
-Migration: replace  "category": "AGRICULTURE"  with  "categories": ["AGRICULTURE"].
+config.json has legacy `category` (string). API marks it deprecated — use `categories` (array of strings).
+Migration: replace  "category": "FARM_MANAGEMENT"  with  "categories": ["FARM_MANAGEMENT"].
 No automatic conversion is performed — please update manually and rerun.
 ```
 
-Rationale: the schema change is user-visible (multi-category support). Automatic conversion would silently lose the user's intent if they originally meant multiple domains or a different default.
+**Case 2 — retired enum values:** the previous enum set (`AGRICULTURE`, `CONSTRUCTION`, `DRONE`, `DIAGNOSTICS`, `MATERIALS`) is no longer valid. Current values are `EASY_WORK | FARM_MANAGEMENT | DEVICE_MANAGEMENT | ENTERTAINMENT | TEST`. If a retired value is detected in `category` or `categories`, surface this and stop:
+
+```
+config.json uses a retired category value: {oldValue}. Current enum: EASY_WORK, FARM_MANAGEMENT, DEVICE_MANAGEMENT, ENTERTAINMENT, TEST.
+Closest mapping is a user decision — common renames:
+  AGRICULTURE  → FARM_MANAGEMENT (most apps)
+  DIAGNOSTICS  → DEVICE_MANAGEMENT
+  CONSTRUCTION / DRONE / MATERIALS → no direct successor; pick the best fit.
+No automatic conversion is performed — please update manually and rerun.
+```
+
+Rationale: the schema change is user-visible (multi-category support, renamed taxonomy). Automatic conversion would silently lose intent — e.g., a `CONSTRUCTION` app has no clean successor, and `AGRICULTURE → FARM_MANAGEMENT` is a guess the user must confirm.
 
 #### 3B-3. Confirm Upload
 
@@ -199,8 +216,9 @@ If validation passes, show summary:
 ### 메타데이터 (config.json)
 - 앱 이름: {info[0].appName}
 - 카테고리: {categories | join(", ")}
+- 호환 기기 타입: {deviceTypes | join(", ")}
 - 가격: {pricingType}
-- 기기: {variants[0].feuType} v{variants[0].version}
+- 기기 (feuType): {variants[0].feuType} v{variants[0].version}
 - 이메일: {email}
 
 업로드를 진행할까요?
