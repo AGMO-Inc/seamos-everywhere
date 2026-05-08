@@ -104,6 +104,305 @@ customui::UIWebServiceProvider::getInstance()->registerWebsocketRoute("/socket",
 > Browser-side counterpart (port discovery, frame protocol, cloud proxy):
 > see the `seamos-customui-client` skill.
 
+## External API Server Communication
+
+> Authoritative spec: https://docs.seamos.io/docs/4/5/4
+>
+> Reference implementations: `external_api_test` (full — both patterns) and
+> `cpp_deploy_test_19` (WebSocket-only variant).
+
+### Why the indirect path
+
+SeamOS apps **do not open TCP/HTTP sockets to external servers directly**.
+Every outbound call to a non-local URL flows through the Cloud plugin, which
+the platform forwards to the configured external server. The response comes
+back through `CloudDownloadListener::handleMessage`. The app matches request
+to response by `correlation-id`.
+
+This isn't an arbitrary detour — it's where the platform attaches:
+- Authentication and TLS / certificate validation
+- Network-policy enforcement (the device's egress is locked down)
+- Audit logging
+
+App code therefore never sees the upstream's TCP endpoint, never handles
+TLS, and never embeds external credentials. If you want a direct outbound
+HTTP from C++, you'd need to link Poco/Boost.Beast yourself and you'd lose
+all of the above — almost always wrong.
+
+### Two patterns: pick by how the UI waits
+
+| Pattern | UI entry | correlation-id prefix | App waits via | When to use |
+|---------|----------|-----------------------|---------------|-------------|
+| **A. Sync HTTP proxy** | `POST /extApi` | `HTTP*` | `std::promise` + `wait_for(10s)` | Form submit, bulk fetch, UI expects one synchronous return |
+| **B. Async WebSocket** | `ws://.../socket` | `WS*` | None — push back via WS | Real-time, multiple concurrent calls, long ops |
+
+The `correlation-id` prefix is the **single dispatch signal** in
+`CloudDownloadListener::handleMessage`. Honour it when generating ids and
+the same listener handles both patterns.
+
+### Envelope key rename (UI ⇄ Cloud proxy)
+
+The UI speaks browser-friendly keys; the Cloud channel speaks proxy-contract
+keys. The translation is the app's job:
+
+| UI sends (browser) | App forwards (Cloud proxy) |
+|--------------------|----------------------------|
+| `endPoint`         | `externalUrl`              |
+| `methodSelect`     | `method`                   |
+| `reqHeader`        | `header`                   |
+| `reqBody`          | `msg`                      |
+| `correlation-id` (optional) | `correlation-id` (generated if absent) |
+
+### Request envelope struct
+
+A small carrier struct keeps both patterns honest:
+
+```cpp
+class ExternalApiRequest {
+public:
+    std::string endPoint;     // External URL
+    std::string method;       // GET, POST, ...
+    Json::Value headerJson;   // Headers as JSON
+    Json::Value bodyJson;     // Request body as JSON
+};
+```
+
+### Pattern A — Sync HTTP `/extApi`
+
+Two pieces: a singleton that parks `std::promise`s by id, and a
+`NevonexRoute` that registers the promise, fires the request, and blocks
+on the future.
+
+**Correlation manager (singleton):**
+```cpp
+class ExternalApiRequestManager {
+public:
+    static ExternalApiRequestManager* getInstance();
+
+    void addPendingRequest(
+        const std::string& correlationId,
+        std::shared_ptr<std::promise<std::string>> promiseObj);
+
+    void notifyResponse(
+        const std::string& correlationId,
+        const std::string& responseBody);
+
+    void removeRequest(const std::string& correlationId);
+
+private:
+    std::mutex _mutex;
+    std::map<std::string, std::shared_ptr<std::promise<std::string>>>
+            _pendingRequests;
+};
+
+void ExternalApiRequestManager::notifyResponse(
+        const std::string& correlationId, const std::string& responseBody) {
+    std::lock_guard<std::mutex> lock(_mutex);
+    auto it = _pendingRequests.find(correlationId);
+    if (it != _pendingRequests.end()) {
+        try {
+            it->second->set_value(responseBody);
+        } catch (const std::future_error&) { /* already set */ }
+        _pendingRequests.erase(it);
+    }
+}
+```
+
+**HTTP route handler — POST `/extApi`:**
+```cpp
+void ExternalApiRoute::handlePost(
+        Poco::Net::HTTPServerRequest &req,
+        Poco::Net::HTTPServerResponse &response) {
+    // 1. Parse incoming UI body
+    Json::Value uiBody;
+    Json::CharReaderBuilder builder;
+    std::string errs;
+    auto stream = std::istringstream(
+        std::string(std::istreambuf_iterator<char>(req.stream()), {}));
+    Json::parseFromStream(builder, stream, &uiBody, &errs);
+
+    // 2. Register a promise BEFORE firing — race-free
+    auto promise = std::make_shared<std::promise<std::string>>();
+    auto future  = promise->get_future();
+
+    long ts = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    std::string cid = "HTTP" + std::to_string(ts);
+    ExternalApiRequestManager::getInstance()->addPendingRequest(cid, promise);
+
+    // 3. Build proxy envelope (rename keys) and send via Cloud
+    Json::Value envelope;
+    envelope["correlation-id"] = cid;
+    envelope["externalUrl"]    = uiBody["endPoint"].asString();
+    envelope["method"]         = uiBody["methodSelect"].asString();
+    envelope["header"]         = uiBody["reqHeader"];
+    envelope["msg"]            = uiBody["reqBody"];
+
+    Json::StreamWriterBuilder writer;
+    std::string envelopeStr = Json::writeString(writer, envelope);
+    ::nevonex::cloud::Cloud::getInstance()->uploadData(envelopeStr, 1);
+    //                                                              ↑
+    //   Second arg is importance (priority). Convention: fixed at 1.
+
+    // 4. Wait up to 10 s
+    if (future.wait_for(std::chrono::seconds(10))
+            == std::future_status::ready) {
+        response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
+        response.setContentType("application/json");
+        response.set("Access-Control-Allow-Origin", "*");
+        std::ostream &out = response.send();
+        out << future.get();
+        out.flush();
+    } else {
+        ExternalApiRequestManager::getInstance()->removeRequest(cid);
+        response.setStatus(Poco::Net::HTTPResponse::HTTP_GATEWAY_TIMEOUT);
+        std::ostream &out = response.send();
+        out << R"({"status":504,"msg":"Gateway Timeout: No response."})";
+        out.flush();
+    }
+}
+```
+
+> The 10 s timeout is the reference value — adjust per app, but cap it.
+> A blocked HTTP thread in the SeamOS app starves other requests.
+
+### Pattern B — Async WebSocket `/socket`
+
+When the UI already has a WebSocket open, dispatch through it and push the
+response back asynchronously. No promise/future, no thread blocking.
+
+```cpp
+void WebSocketEndPoint::onWebSocketMessage(const std::string &message) {
+    // Parse UI message; if it's an external-API request, route it.
+    Json::Value root;
+    Json::CharReaderBuilder rb;
+    std::string errs;
+    std::unique_ptr<Json::CharReader> reader(rb.newCharReader());
+    if (!reader->parse(message.data(),
+                       message.data() + message.size(),
+                       &root, &errs)) return;
+
+    if (!root.isMember("endPoint")) {
+        // Not an external API call — handle other UI frames (publish, etc.)
+        return;
+    }
+
+    long ts = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    std::string cid = root.get("correlation-id", "").asString();
+    if (cid.empty()) cid = "WS" + std::to_string(ts);
+
+    Json::Value envelope;
+    envelope["correlation-id"] = cid;
+    envelope["externalUrl"]    = root["endPoint"].asString();
+    envelope["method"]         = root["methodSelect"].asString();
+    envelope["header"]         = root["reqHeader"];
+    envelope["msg"]            = root["reqBody"];
+
+    Json::StreamWriterBuilder writer;
+    std::string envelopeStr = Json::writeString(writer, envelope);
+    ::nevonex::cloud::Cloud::getInstance()->uploadData(envelopeStr, 1);
+    // Response will arrive in CloudDownloadListener and be pushed to the WS.
+}
+```
+
+### CloudDownloadListener — the single response handler
+
+The same listener serves both patterns. Disambiguate by `correlation-id`
+prefix. Pattern A resolves the parked promise; Pattern B re-wraps and pushes
+to the UI WebSocket as `external_api_response`.
+
+```cpp
+void CloudDownloadListener::handleMessage(const std::string &_content) {
+    Json::Value response;
+    Json::CharReaderBuilder builder;
+    std::string errs;
+    auto stream = std::istringstream(_content);
+    if (!Json::parseFromStream(builder, stream, &response, &errs)) {
+        NEVONEX_LOG(SeverityLevel::warning)
+                << "[CloudDownload] JSON parse failed: " << errs;
+        return;
+    }
+    if (!response.isMember("correlation-id")
+            || !response["correlation-id"].isString()) return;
+
+    const std::string cid = response["correlation-id"].asString();
+
+    if (cid.find("HTTP") != std::string::npos) {
+        // Pattern A: wake up ExternalApiRoute::handlePost
+        ExternalApiRequestManager::getInstance()
+                ->notifyResponse(cid, _content);
+        return;
+    }
+
+    if (cid.find("WS") != std::string::npos) {
+        // Pattern B: re-wrap as external_api_response and broadcast
+        Json::Value envelope;
+        envelope["type"]           = "external_api_response";
+        envelope["correlation-id"] = cid;
+        envelope["data"]           = response.get("data", Json::Value());
+
+        Json::StreamWriterBuilder wb; wb["indentation"] = "";
+        auto ws = ::AppMain::web::WebSocketEndPoint::getInstance();
+        if (ws) ws->publishMessage(Json::writeString(wb, envelope));
+    }
+}
+```
+
+> The outgoing UI envelope (`{ type: "external_api_response", ... }`) is
+> what the browser-side dispatcher matches on. See the browser dispatch
+> skeleton in `seamos-customui-client` → ws-protocol.md.
+
+### Listener registration (in `addCustomUIListener` / lifecycle)
+
+```cpp
+void ApplicationMain::addCloudDownloadListener() {
+    using namespace ::nevonex::cloud;
+    auto *listener = new CloudDownloadListener();
+    listener->setMainController(getMainController());
+    Cloud::getInstance()->addPropertyChangeListener(listener);
+    //                    ↑
+    // Cloud is a singleton; treat it as a long-lived global. The listener
+    // outlives any single request — it's the demux for ALL cloud responses.
+}
+
+void ApplicationMain::addCustomUIListener() {
+    // Pattern A — HTTP proxy route
+    auto extFactory = std::make_shared<ExternalApiRouteFactory>();
+    extFactory->setMainController(getMainController());
+    customui::UIWebServiceProvider::getInstance()
+            ->registerRoute("/extApi", extFactory);
+
+    // Pattern B — WebSocket route (also handles /publish frames etc.)
+    auto ws = WebSocketEndPoint::getInstance();
+    ws->setMainController(getMainController());
+    customui::UIWebServiceProvider::getInstance()
+            ->registerWebsocketRoute("/socket", ws);
+}
+```
+
+### Common gotchas
+
+- **Register the promise BEFORE calling `uploadData`** in Pattern A. If the
+  cloud responds faster than `addPendingRequest` runs, `notifyResponse`
+  silently drops the message — there's no parked entry to resolve.
+- **`correlation-id` must be unique across BOTH patterns at any moment.**
+  The prefix is the dispatch key, but the full id (prefix + epoch) must
+  also be unique. `HTTP{ms}` + `WS{ms}` collisions across patterns at the
+  same millisecond are theoretically possible — add a counter if you fire
+  many requests in tight loops.
+- **`Cloud::uploadData(payload, 1)` second arg is importance/priority,
+  conventionally fixed at 1.** The Cloud plugin uses it to bucket queued
+  outbound traffic; varying it without a deliberate reason is noise.
+- **Don't use Pattern A for streaming or long-poll responses.** The 10 s
+  timeout fires and the response, when it eventually arrives, becomes an
+  orphan that `notifyResponse` drops because `removeRequest` already ran.
+  Use Pattern B and let the UI manage its own timeout.
+- **Device2Device download/receive looks similar but is a separate channel
+  — its `handleMessage` is intentionally left unimplemented in the
+  reference projects.** Don't copy the Cloud dispatch logic into the D2D
+  listener unless you actually need D2D-driven responses.
+
 ## DB Persistence
 
 C++ SQLite 의 working DB 는 `./db/<name>.db` 에 두며 빌드 시 제외된다. 디바이스 영속 DB 는 `disk/<feature>/runtime.db` 와 같이 `disk/<feature>/...` 하위에 위치하며 디바이스 측에서 런타임에 생성/유지한다 — 빌드 산출물(FIF) 에 포함되지 않는다. 앱이 의도적으로 동봉하는 시드 데이터(예: 초기 카탈로그 SQLite dump 또는 JSON) 는 `disk/seed/...` 하위에 두면 allowlist 정책으로 패키징되어 첫 부팅 시 디바이스로 복사된다.

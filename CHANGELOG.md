@@ -2,6 +2,32 @@
 
 All notable changes to **seamos-everywhere** are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [SemVer](https://semver.org/) (pre-1.0: minor bumps signal feature additions, patch bumps signal fixes).
 
+## [0.7.6] — 2026-05-08
+
+**External API Server Communication 패턴 도큐먼트화.** 사용자가 SeamOS 앱(C++/Java)에서 외부 HTTPS API 를 호출하는 방법을 물었을 때, 스킬에는 — 공식 문서(https://docs.seamos.io/docs/4/5/4) 와 reference 구현(`external_api_test`, `cpp_deploy_test_19`) 모두 존재함에도 — 패턴이 전혀 들어 있지 않아 매번 raw 코드를 직접 읽고 재구성해야 했음. 이 갭을 메운다. 스킬 본체 코드 변경 없음 (문서 + 트리거 키워드 + cross-reference 만).
+
+### Added — External API Server Communication
+- **`skills/seamos-app-framework/references/usage-patterns/cpp.md`** — "External API Server Communication" 섹션 신설 (+299 lines). 두 패턴 풀 코드:
+  - **Pattern A — Sync HTTP `/extApi`**: `ExternalApiRequestManager` singleton + `std::promise`/`wait_for(10s)` + Poco `NevonexRoute` 핸들러. UI 가 동기 응답 기대하는 form submit / bulk fetch 용.
+  - **Pattern B — Async WebSocket `/socket`**: `WebSocketEndPoint::onWebSocketMessage` 에서 `endPoint` 필드 감지 → Cloud uploadData 디스패치 → `CloudDownloadListener` 가 `external_api_response` envelope 으로 broadcast. 실시간/concurrent/long-op 용.
+  - **단일 응답 핸들러**: `CloudDownloadListener::handleMessage` 가 `correlation-id` prefix(`HTTP*` vs `WS*`)로 두 패턴 분기.
+  - **Listener 등록**: `ApplicationMain::addCloudDownloadListener` (Cloud singleton 에 `addPropertyChangeListener`) + `addCustomUIListener` (`/extApi` Route + `/socket` WS).
+  - **Gotcha 5 개**: register-before-uploadData race, correlation-id 충돌, importance arg = 1 fixed, Pattern A 의 10 초 ceiling, D2D listener 빈 stub 은 의도적 (Cloud 코드 복사 금지).
+- **`skills/seamos-app-framework/references/usage-patterns/java.md`** — Java 동등 패턴 섹션 (+147 lines). C++ ⇄ Java 타입 매핑 표(`std::promise` ↔ `CompletableFuture`, `Json::Value` ↔ Gson `JsonObject`, `BaseRestService` 기반 라우트). Pattern A 풀 스켈레톤(`ExternalApiRequestManager` ConcurrentHashMap + `CompletableFuture.get(10, TimeUnit.SECONDS)`).
+- **`skills/seamos-customui-client/references/cloud-proxy.md`** — "How the backend dispatches the envelope" 섹션 추가 (+62 lines). 브라우저↔백엔드 envelope key rename 표(`endPoint`→`externalUrl`, `methodSelect`→`method`, `reqHeader`→`header`, `reqBody`→`msg`), 두 패턴 요약, "백엔드 의심 vs UI 의심" 트러블슈팅 표. 실제 backend 구현은 `seamos-app-framework` 로 cross-reference.
+
+### Changed — Trigger keywords + cross-references
+- **`skills/seamos-app-framework/SKILL.md`** — description 에 "external API server communication" 추가, 트리거 9 개 추가(`external API`, `외부 API`, `cloud proxy`, `uploadData`, `extApi`, `CloudDownloadListener`, `correlation-id`, `외부 서버 호출`, `백엔드 외부 호출`). 패턴 표에 External API 행 추가. Step 1 Pattern Selection 에 외부 API 항목 추가.
+- **`skills/seamos-customui-client/SKILL.md`** — description 에 envelope key rename 명시(`endPoint → externalUrl` 등) — 백엔드 측 키 이름과 UI 측 키 이름이 다른 점이 디버깅의 첫 함정인데 description 에 안 써 있어서 cloud-proxy.md 까지 들어가야 알 수 있던 부분.
+- **`skills/seamos-plugins/references/usage-patterns/cpp.md` / `java.md`** — Platform Service Methods 의 `Cloud::uploadData(data, ?)` 두번째 인자에 주석 추가: **importance(중요도). 보통 1 로 픽스해서 사용** (사용자 확인 사항). 외부 API 호출은 직접 HTTP 클라이언트가 아니라 Cloud 채널로 가야 한다는 원칙 + `seamos-app-framework` 외부 API 섹션으로 cross-ref 추가.
+
+### Why now (사용자 학습 동기)
+사용자가 `cpp_deploy_test_19` 의 `WebSocketEndPointImpl.cpp` / `CloudDownloadListenerImpl.cpp` 와 공식 문서를 함께 보여주며 "이 패턴이 스킬에 왜 없냐"고 짚어줘서 갭을 인지. 다음 SeamOS 앱 만들 때 Claude 가 처음부터 올바른 패턴(특히 `correlation-id` prefix 분기, importance arg, envelope key rename)을 생성하도록 SSOT 를 옮긴다.
+
+### Notes
+- 코드 변경 없음 — 스킬 문서/메타데이터만. plugin install/setup/upload/build 동작 회귀 위험 없음.
+- 레퍼런스 구현 두 개 모두 명시: `external_api_test` (두 패턴 다), `cpp_deploy_test_19` (WebSocket-only 변종) — 사용자가 어느 프로젝트 보고 따라 만들지 헷갈리지 않게.
+
 ## [0.7.5] — 2026-05-07
 
 **Zero-config plugin install.** 0.7.4 까지 사용자가 plugin install 직후 `/plugin config seamos-everywhere` 로 `seamos_api_url` 을 직접 입력해야 첫 MCP 호출이 동작했다. 이는 일반 사용자에게 마찰이고, 0.7.1 워크스루에서도 외부 의존(B2 — Claude Code 본체가 install 시 userConfig prompt 를 안 띄우는 문제) 을 우회 못 해 STATUS_WARN 안내로만 처리해뒀던 부분. 0.7.5 는 마찰 자체를 제거 — plugin 의 `mcp-servers.json` 이 dev 마켓플레이스 URL 을 직접 박아두고, `userConfig.seamos_api_url` 정의는 통째 제거한다. install 즉시 OAuth 기반 마켓플레이스 도구가 동작.

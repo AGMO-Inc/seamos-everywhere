@@ -92,10 +92,15 @@ canAllynav.addPropertyChangeListener(event -> {
 Platform_Service uses a different pattern — method invocation instead of getter/setter.
 
 ```java
-// Cloud upload
-platformService.uploadData(dataString);
-platformService.uploadFile(filePath);
-platformService.download(targetPath);
+// Cloud — uploadData takes (data, importance)
+Cloud.getInstance().uploadData(dataString, 1);
+//                                          ↑
+// Second arg = importance (priority). Conventionally fixed at 1.
+// The Cloud channel uses it to bucket queued outbound traffic; vary it
+// only with a deliberate reason — most apps just pass 1.
+
+Cloud.getInstance().uploadFile(filePath);
+Cloud.getInstance().download(targetPath);
 
 // Device-to-Device
 platformService.sendCommand(deviceId, command);
@@ -107,6 +112,13 @@ platformService.readQRCode();
 // AgriRouter
 platformService.uploadAgriRouterFile(filePath);
 ```
+
+> **External API calls go through `Cloud.uploadData` — not a direct HTTP
+> client.** SeamOS apps never open external HTTP sockets directly; the
+> platform forwards through the Cloud channel for auth/TLS/audit. For the
+> request/response correlation pattern (sync `/extApi` vs async `/socket`,
+> `correlation-id` prefix dispatch, `CloudDownloadListener` wiring), see
+> `seamos-app-framework` → External API Server Communication.
 
 ## Key Interfaces
 

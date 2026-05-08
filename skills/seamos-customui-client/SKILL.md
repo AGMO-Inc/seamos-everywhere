@@ -11,10 +11,11 @@ description: >
   web problem like "fetch 404", "WS not connecting", "CORS blocked", or
   "how do I read this stream in the browser". Covers `get_assigned_ports`
   port discovery, the four-frame WS protocol (publish / publish_ack /
-  topic / external_api_response), payload.PL parsing, and the
-  correlation-id cloud-proxy envelope for external HTTPS. Trigger
-  generously: under-triggering this skill produces code that compiles
-  fine and breaks on every real device.
+  topic / external_api_response), payload.PL parsing, the correlation-id
+  cloud-proxy envelope for external HTTPS, and the UI ⇄ backend envelope
+  key rename (endPoint → externalUrl, methodSelect → method, reqHeader →
+  header, reqBody → msg). Trigger generously: under-triggering this skill
+  produces code that compiles fine and breaks on every real device.
 ---
 
 # SeamOS CustomUI Client
