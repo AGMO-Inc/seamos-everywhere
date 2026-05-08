@@ -114,16 +114,35 @@ void MainController::run() {
 ## Platform Service Methods
 
 ```cpp
-platformService->uploadData(dataString);    // Cloud upload
-platformService->uploadFile(filePath);      // Cloud upload
-platformService->download(targetPath);      // Cloud download
-platformService->sendCommand(deviceId, command); // Device-to-Device
-platformService->sendFile(deviceId, filePath);   // Device-to-Device
-platformService->readQRCode();              // QR Scanner
-platformService->uploadAgriRouterFile(filePath); // AgriRouter
+// Cloud — note the (data, importance) signature on uploadData
+::nevonex::cloud::Cloud::getInstance()->uploadData(dataString, 1);
+//                                                             ↑
+// Second arg = importance (priority). Conventionally fixed at 1.
+// The Cloud channel uses it to bucket queued outbound traffic; vary it
+// only with a deliberate reason — most apps just pass 1.
+
+::nevonex::cloud::Cloud::getInstance()->uploadFile(filePath);
+::nevonex::cloud::Cloud::getInstance()->download(targetPath);
+
+// Device-to-Device
+platformService->sendCommand(deviceId, command);
+platformService->sendFile(deviceId, filePath);
+
+// QR Scanner
+platformService->readQRCode();
+
+// AgriRouter
+platformService->uploadAgriRouterFile(filePath);
 ```
 
 > **Note:** The C++ `PlatformServicesEnum` is currently empty in the reference implementation. Platform Service method patterns follow the same structure as Java but with pointer-based access.
+
+> **External API calls go through `Cloud::uploadData` — not a direct HTTP
+> client.** SeamOS apps never open TCP/HTTP sockets to external servers
+> directly; the platform forwards through the Cloud channel for auth/TLS/
+> audit. For the request/response correlation pattern (sync `/extApi` vs
+> async `/socket`, `correlation-id` prefix dispatch, `CloudDownloadListener`
+> wiring), see `seamos-app-framework` → External API Server Communication.
 
 ## Protected Region
 

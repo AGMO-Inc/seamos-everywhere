@@ -124,3 +124,65 @@ try {
   showError(err.message)
 }
 ```
+
+## How the backend dispatches the envelope (the other half)
+
+The UI-side envelope above is only half the story — the app's C++/Java side
+unwraps it, forwards through the Cloud plugin, and routes the response back.
+Knowing the contract here helps you debug "why isn't my response coming back"
+without reading the SDK source.
+
+### Key rename: UI envelope → proxy envelope
+
+The browser uses keys that read naturally to UI authors (`endPoint`,
+`methodSelect`). The Cloud proxy on the device speaks a different vocabulary
+(`externalUrl`, `method`). The app translates between them:
+
+| UI envelope (this skill) | Cloud proxy envelope (backend) |
+|--------------------------|--------------------------------|
+| `endPoint`               | `externalUrl`                  |
+| `methodSelect`           | `method`                       |
+| `reqHeader`              | `header`                       |
+| `reqBody`                | `msg`                          |
+| `correlation-id`         | `correlation-id` (passed through) |
+
+If the app receives an envelope without a `correlation-id`, it generates one
+of the form `WS{epoch_ms}` (or `HTTP{epoch_ms}` — see below).
+
+### Two backend dispatch patterns
+
+The official spec (https://docs.seamos.io/docs/4/5/4) defines two ways the
+app can wait for the response. The `correlation-id` **prefix** (`HTTP*` vs
+`WS*`) tells the response handler which path to take:
+
+| Pattern | UI entry point | correlation-id prefix | App-side wait | When to use |
+|---------|----------------|-----------------------|---------------|-------------|
+| **A. Sync HTTP proxy** | `POST /extApi` | `HTTP*` | `std::promise` + 10 s `wait_for` | Form submit, bulk fetch, UI expects synchronous return |
+| **B. Async WebSocket** | `ws://.../socket` | `WS*` | None — push back via WS | Real-time streams, multiple concurrent calls, long ops |
+
+This skill (browser-side) implements Pattern B. Pattern A is a parallel
+backend route the UI hits with plain `fetch('/extApi', ...)` instead of
+opening a WebSocket — useful when you want one round-trip without managing
+a WS pending-map.
+
+### Response envelope (incoming, again)
+
+The cloud returns `{ data, correlation-id }`. The app re-wraps it as the
+`external_api_response` frame documented above before publishing to the WS.
+The `data` field is the upstream response body, **already JSON-parsed by
+the app**.
+
+### When you suspect the backend, not the UI
+
+Symptoms that point at the backend, not your UI code:
+
+| Symptom | Likely backend cause |
+|---------|---------------------|
+| `external_api_response` never arrives, but `publish` works | Cloud channel not registered, or `CloudDownloadListener` not wired |
+| Response arrives but UI's pending-map orphans it | UI's `correlation-id` doesn't match what backend sent — backend may have generated its own |
+| 504 / Gateway Timeout | App used Pattern A and the upstream took >10 s; either retry or switch to Pattern B |
+
+Backend implementation (Cloud listener registration, prefix dispatch, the
+`uploadData(payload, 1)` call where `1` is the importance/priority and is
+conventionally fixed) lives in `seamos-app-framework` → External API Server
+Communication. Read that file when working on the app side.

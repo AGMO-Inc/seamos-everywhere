@@ -2,13 +2,16 @@
 name: seamos-app-framework
 description: >
   SeamOS (NEVONEX) app framework code generation guide for REST API, WebSocket, DB persistence,
-  and feature lifecycle patterns. Supports Java and C++ projects.
+  feature lifecycle, and external API server communication patterns. Supports Java and C++ projects.
   Use when developing SeamOS apps that need HTTP endpoints, WebSocket communication,
-  database storage, or lifecycle management.
+  database storage, lifecycle management, or outbound calls to external/cloud APIs
+  (which must route through the Cloud plugin — apps cannot open external HTTP sockets directly).
   Triggers: "REST", "API", "endpoint", "라우트", "route", "WebSocket", "소켓", "socket",
   "DB", "database", "데이터베이스", "영속성", "persistence", "H2", "SQLite",
   "lifecycle", "라이프사이클", "CRUD", "테이블", "table", "repository",
-  "saveToDisk", "persistToDisk", "handleFeatureStart".
+  "saveToDisk", "persistToDisk", "handleFeatureStart",
+  "external API", "외부 API", "cloud proxy", "uploadData", "extApi",
+  "CloudDownloadListener", "correlation-id", "외부 서버 호출", "백엔드 외부 호출".
 ---
 
 # SeamOS App Framework
@@ -30,6 +33,7 @@ Guide for developing SeamOS apps with REST APIs, WebSocket communication, databa
 | WebSocket | Jetty @WebSocket | WebSocketRouteFactory | Real-time communication |
 | DB Persistence | H2 + FCALFileProvider | SQLite + FileProvider | Data storage with container survival |
 | Feature Lifecycle | AbstractFeatureNotification | FeatureManagerListener + IgnitionStateListener | App start/stop hooks |
+| External API | `CompletableFuture` + Cloud + CloudDownloadListener | `std::promise` + Cloud + CloudDownloadListener | Outbound HTTPS to cloud / marketplace / 3rd-party |
 
 ## Workflow
 
@@ -40,6 +44,7 @@ Determine which pattern the user needs:
 - **WebSocket** — Real-time bidirectional communication between app and client
 - **DB Persistence** — Structured data storage that survives NEVONEX container restarts
 - **Feature Lifecycle** — Hooks for app start, stop, and ignition state changes
+- **External API Server Communication** — Outbound calls from the app to non-local URLs (cloud APIs, marketplace, 3rd-party). Must route through the Cloud plugin's `uploadData` + `CloudDownloadListener` channel; direct HTTP sockets are not supported. Two sub-patterns: sync (`/extApi`, `HTTP*` correlation prefix, `std::promise`/`CompletableFuture` + 10 s wait) and async (`/socket`, `WS*` prefix, push back over WebSocket).
 
 ### Step 2: Language Detection
 
