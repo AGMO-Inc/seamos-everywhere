@@ -100,148 +100,364 @@ UIWebServiceProvider.getInstance().openWebsocket("/socket", UIWebsocketEndPoint.
 
 > Authoritative spec: https://docs.seamos.io/docs/4/5/4
 >
-> The reference implementations are C++ (`external_api_test`,
-> `cpp_deploy_test_19`). The architectural rules below apply identically to
-> Java — only the type names change. When generating Java code, mirror the
-> C++ patterns in `cpp.md` § External API Server Communication and adapt as
-> noted here.
+> Java reference implementation: **`agnote-core`** (`FuelPriceCloudUploadService`,
+> `WeatherGetService`, `CloudDownloadListener`, `PendingRequestRegistry`).
+> The conventions below are taken from real running code in that project —
+> they differ from the C++ reference (`cpp_deploy_test_19`) in several
+> places. Where the languages diverge, **trust this section for Java**;
+> see `cpp.md` for the C++ contract.
 
-### Same indirect-path rule
+### The indirect-path rule (same as C++)
 
 SeamOS Java apps **do not open external HTTP sockets directly**. Outbound
-traffic goes through the Cloud plugin; responses come back via the Cloud
-download listener. The platform owns auth, TLS, network policy, and audit
-logging.
+traffic goes through the Cloud plugin (`com.bosch.nevonex.cloud.impl.Cloud`),
+the platform forwards it, and responses come back via a
+`CloudDownloadListener`. The platform owns auth, TLS, network policy, and
+audit logging — call `HttpClient`/`URLConnection` from app code and you
+lose all of that.
 
-### Two patterns (same as C++)
+### How the C++ patterns map to Java
 
-| Pattern | UI entry | correlation-id prefix | App waits via | When to use |
-|---------|----------|-----------------------|---------------|-------------|
-| **A. Sync HTTP proxy** | `POST /extApi` | `HTTP*` | `CompletableFuture<String>` + `get(10, TimeUnit.SECONDS)` | UI expects synchronous return |
-| **B. Async WebSocket** | `ws://.../socket` | `WS*` | None — push back over WS | Real-time / concurrent / long ops |
+C++ docs split the work into "Pattern A (sync `POST /extApi`)" and
+"Pattern B (async WebSocket)". The Java reference (`agnote-core`) does
+**not** ship a `/extApi` route at all. Instead, every external call is a
+**plain REST endpoint that triggers a Cloud upload, then either returns
+immediately (ack-only) or has the response broadcast over the WebSocket
+when it lands**. Two variants emerge:
 
-### Java equivalents of the key types
+| Variant | Service shape | Registry use | UI receives via | When to use |
+|---------|---------------|--------------|-----------------|-------------|
+| **V1. Cloud Upload (ack-only)** | `{Name}CloudUploadService extends BaseRestService`, returns `{status, correlationId, response}` synchronously from `uploadData` | None — UI matches by `correlationId` later | Generic WS broadcast (whatever `CloudDownloadListener` does with the eventual response) | UI is happy with "request accepted, wait for it on the WS" semantics |
+| **V2. Trigger + type-routed broadcast** | `{Name}GetService extends BaseRestService`, `register(cid, "{type}")` then upload, returns `{"status":"success"}` immediately | `PendingRequestRegistry.register` / `consume` | `{"type":"EXT-{type}", "data":{parsed}}` frame on the WS | Response needs server-side parsing or domain routing before the UI sees it |
 
-| C++ | Java |
-|-----|------|
-| `ExternalApiRequestManager` (singleton, `std::map<id, std::promise>`) | Singleton with `ConcurrentHashMap<String, CompletableFuture<String>>` |
-| `std::promise<std::string>` / `wait_for` | `CompletableFuture<String>` + `get(10, TimeUnit.SECONDS)` |
-| `Json::Value` envelope + `Json::writeString` | `JsonObject` (Gson) + `gson.toJson(...)` |
-| `Cloud::getInstance()->uploadData(payload, 1)` | `Cloud.getInstance().uploadData(payloadString, 1)` — second arg is importance/priority, conventionally fixed at 1 |
-| `CloudDownloadListener::handleMessage` | `CloudDownloadListener#handleMessage(String)` registered via `Cloud.getInstance().addPropertyChangeListener(...)` |
-| `WebSocketEndPoint::onWebSocketMessage` | `@OnWebSocketMessage public void message(...)` on `UIWebsocketEndPoint` |
-| HTTP route `ExternalApiRoute` | `BaseRestService` subclass `ExternalApiService`, registered via `UIWebServiceProvider.getInstance().registerPostService("extApi", ...)` |
+A C++-style **synchronous** `/extApi` route (block the HTTP thread on a
+`CompletableFuture` for up to 10 s) is **possible** in Java but not
+present in any verified reference. If you need it, mirror the C++ Pattern A
+in `cpp.md` and use `CompletableFuture.get(10, TimeUnit.SECONDS)` —
+treat it as new ground, not a documented pattern.
 
-### Envelope key rename (identical to C++)
-
-```
-UI sends            App forwards
-─────────           ────────────
-endPoint        →   externalUrl
-methodSelect    →   method
-reqHeader       →   header
-reqBody         →   msg
-correlation-id  →   correlation-id (generate "HTTP{ms}" or "WS{ms}" if absent)
-```
-
-### Pattern A skeleton (Java)
+### `uploadData` signature (Java)
 
 ```java
-public class ExternalApiRequestManager {
-    private static final ExternalApiRequestManager INSTANCE = new ExternalApiRequestManager();
-    private final Map<String, CompletableFuture<String>> pending = new ConcurrentHashMap<>();
+String result = Cloud.getInstance()
+        .uploadData(dataString, priority, ConnectionTypeEnum.WIFI);
+//                              ↑          ↑
+//   priority 1=High / 2=Medium / 3=Low    ConnectionTypeEnum.{WIFI,SATELLITE}
+```
 
-    public static ExternalApiRequestManager getInstance() { return INSTANCE; }
+- **Three args, returns `String`** (cloud-side ack/result; not the upstream
+  HTTP body — that arrives later via `CloudDownloadListener`).
+- **Default priority in `agnote-core` is `2`** (Medium), not `1`. C++ docs
+  describe `1` as "fixed by convention" — that came from a different
+  project. Pick a deliberate value; `2` is the safe default.
+- `ConnectionTypeEnum` lives in `com.bosch.nevonex.common`.
+- Throws specific `Cloud{BadRequest,UnAuthorized,AccessDenied,Connection}Exception`
+  + `PlatformServiceException`. Catch each — error messages are the only
+  way to tell auth failures from network failures.
 
-    public void addPending(String cid, CompletableFuture<String> f) { pending.put(cid, f); }
-    public void notifyResponse(String cid, String body) {
-        CompletableFuture<String> f = pending.remove(cid);
-        if (f != null) f.complete(body);
-    }
-    public void remove(String cid) { pending.remove(cid); }
+### Outgoing envelope (the JSON inside `data`)
+
+```json
+{
+  "correlation-id": "550e8400-e29b-41d4-a716-446655440000",
+  "externalUrl":    "https://api.example.com/data",
+  "method":         "POST",
+  "header":         { "Content-Type": "application/json", "Authorization": "Bearer ..." },
+  "msg":            "<request body string>"
 }
 ```
 
-```java
-public class ExternalApiService extends BaseRestService {
-    @Override
-    public Object processService(Request request, Response response) {
-        JsonObject ui = parseBody(request);
+- `correlation-id`: **UUID v4** in `agnote-core` (`UUID.randomUUID().toString()`),
+  not `HTTP{ms}` / `WS{ms}` like C++. Don't rely on a prefix to dispatch
+  responses — Java uses the registry instead.
+- `header` is a JSON object. The service should default `Content-Type:
+  application/json` when caller omits it.
+- `msg` is typically a string but the reference keeps it as a `JsonElement`
+  so structured payloads pass through unchanged.
 
-        CompletableFuture<String> future = new CompletableFuture<>();
-        String cid = "HTTP" + System.currentTimeMillis();
-        ExternalApiRequestManager.getInstance().addPending(cid, future);
+> **UI envelope keys vs backend envelope keys** — `agnote-core`'s UI sends
+> the backend keys (`externalUrl`, `method`, `header`, `msg`) directly and
+> the service forwards them verbatim. The `endPoint`/`methodSelect`/
+> `reqHeader`/`reqBody` aliases described in `cpp.md` are a different
+> project's UI convention, not a Java-side requirement. If you start with
+> agnote, keep the keys aligned end-to-end.
+
+### Variant V1 — Cloud Upload service (ack-only)
+
+The whole service is just envelope-build + `uploadData`. The HTTP response
+hands the UI a `correlationId` it can match against the eventual WS frame.
+
+```java
+public class FuelPriceCloudUploadService extends BaseRestService {
+
+    @Override
+    protected Object processService(Request request, Response response) {
+        try {
+            JsonObject payload = parseBody(request);
+            if (payload == null) return errorResponse("Request body is empty");
+
+            // Validate externalUrl + method (POST/GET)
+            String externalUrl = requireString(payload, "externalUrl");
+            String method = requireString(payload, "method").toUpperCase();
+            if (!method.equals("POST") && !method.equals("GET")) {
+                return errorResponse("'method' must be POST or GET");
+            }
+
+            JsonObject header = payload.has("header") && payload.get("header").isJsonObject()
+                    ? payload.get("header").getAsJsonObject() : new JsonObject();
+            if (!header.has("Content-Type")) {
+                header.addProperty("Content-Type", "application/json");
+            }
+            JsonElement msg = payload.has("msg") ? payload.get("msg") : new JsonPrimitive("");
+
+            String correlationId = UUID.randomUUID().toString();
+            JsonObject envelope = new JsonObject();
+            envelope.addProperty("correlation-id", correlationId);
+            envelope.addProperty("externalUrl", externalUrl);
+            envelope.addProperty("method", method);
+            envelope.add("header", header);
+            envelope.add("msg", msg);
+
+            int priority = payload.has("priority") ? payload.get("priority").getAsInt() : 2;
+            ConnectionTypeEnum conn = payload.has("connectionType")
+                    ? ConnectionTypeEnum.get(payload.get("connectionType").getAsString())
+                    : ConnectionTypeEnum.WIFI;
+
+            String ack = Cloud.getInstance().uploadData(envelope.toString(), priority, conn);
+
+            JsonObject res = new JsonObject();
+            res.addProperty("status", "success");
+            res.addProperty("correlationId", correlationId);
+            res.addProperty("response", ack);
+            return res.toString();
+
+        } catch (CloudBadRequestException e)    { return errorResponse("Cloud bad request: " + e.getMessage()); }
+        catch (CloudUnAuthorizedException e)    { return errorResponse("Cloud unauthorized: " + e.getMessage()); }
+        catch (CloudAccessDeniedException e)    { return errorResponse("Cloud access denied: " + e.getMessage()); }
+        catch (CloudConnectionException e)      { return errorResponse("Cloud connection failed: " + e.getMessage()); }
+        catch (PlatformServiceException e)      { return errorResponse("Platform service error: " + e.getMessage()); }
+        catch (Exception e)                     { return errorResponse(e.getMessage()); }
+    }
+}
+```
+
+Registered with route prefix `cloud-upload/`:
+```java
+UIWebServiceProvider.getInstance()
+        .registerPostService("cloud-upload/fuel-price", fuelPriceCloudUploadService);
+```
+
+### Variant V2 — Trigger + type-routed broadcast
+
+When the listener needs to **parse / transform** the upstream response
+(e.g. weather: pick out today's max/min), tag the request with a `type` in
+`PendingRequestRegistry`. The listener consumes the type and broadcasts a
+domain frame.
+
+```java
+public class WeatherGetService extends BaseRestService {
+
+    private static final String BASE_URL =
+            "https://api.open-meteo.com/v1/forecast";
+
+    @Override
+    protected Object processService(Request request, Response response) {
+        String latitude  = requireQuery(request, "latitude");
+        String longitude = requireQuery(request, "longitude");
+
+        triggerExternalApiCall(latitude, longitude);
+
+        JsonObject result = new JsonObject();
+        result.addProperty("status", "success");
+        result.addProperty("message", "Weather request triggered");
+        return result.toString();
+    }
+
+    private void triggerExternalApiCall(String lat, String lon) {
+        String url = BASE_URL + "?latitude=" + lat + "&longitude=" + lon
+                + "&current=temperature_2m,weather_code"
+                + "&timezone=auto";
+
+        String cid = UUID.randomUUID().toString();
+        PendingRequestRegistry.getInstance().register(cid, "weather");
+        //                                              ↑
+        //  Tag = the type-routing key consumed by CloudDownloadListener.
 
         JsonObject envelope = new JsonObject();
         envelope.addProperty("correlation-id", cid);
-        envelope.addProperty("externalUrl", ui.get("endPoint").getAsString());
-        envelope.addProperty("method",      ui.get("methodSelect").getAsString());
-        envelope.add("header", ui.get("reqHeader"));
-        envelope.add("msg",    ui.get("reqBody"));
+        envelope.addProperty("externalUrl", url);
+        envelope.addProperty("method", "GET");
+        envelope.add("header", new JsonObject());
+        envelope.addProperty("msg", "");
 
-        Cloud.getInstance().uploadData(new Gson().toJson(envelope), 1);
-        //                                                          ↑
-        //  Importance (priority). Convention: fixed at 1.
+        Cloud.getInstance().uploadData(envelope.toString(), 2, ConnectionTypeEnum.WIFI);
+    }
+}
+```
+
+### `PendingRequestRegistry` — the agnote-core demux table
+
+A small singleton: **correlation-id → type-string**, with a 60 s TTL.
+*Not* a `CompletableFuture` map (that would block a thread; agnote
+listeners broadcast instead).
+
+```java
+public class PendingRequestRegistry {
+    private static final PendingRequestRegistry INSTANCE = new PendingRequestRegistry();
+    private static final long TTL_MS = 60_000;
+
+    private final ConcurrentHashMap<String, String> pending = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Long>   timestamps = new ConcurrentHashMap<>();
+
+    private PendingRequestRegistry() {
+        ScheduledExecutorService cleaner = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "PendingRequestRegistry-cleaner");
+            t.setDaemon(true);  // don't pin JVM shutdown
+            return t;
+        });
+        cleaner.scheduleAtFixedRate(this::evictExpired, TTL_MS, TTL_MS, TimeUnit.MILLISECONDS);
+    }
+
+    public static PendingRequestRegistry getInstance() { return INSTANCE; }
+
+    public void register(String correlationId, String type) {
+        pending.put(correlationId, type);
+        timestamps.put(correlationId, System.currentTimeMillis());
+    }
+
+    /** Returns the type, or null if unknown / expired. Removes the entry. */
+    public String consume(String correlationId) {
+        timestamps.remove(correlationId);
+        return pending.remove(correlationId);
+    }
+
+    private void evictExpired() {
+        long now = System.currentTimeMillis();
+        timestamps.entrySet().removeIf(e -> {
+            if (now - e.getValue() > TTL_MS) { pending.remove(e.getKey()); return true; }
+            return false;
+        });
+    }
+}
+```
+
+### `CloudDownloadListener` — single demux for all responses
+
+The listener is a NEVONEX-generated EMF object. Extend
+`AbstractCloudDownloadListener` and override `handleContent` /
+`handleFile`; the `propertyChange` glue routes platform events to those
+methods. Two non-obvious requirements:
+
+1. **Property names are `CloudMessageReceived` / `CloudFileReceived`** — not
+   `"download"`. Wrong name = listener registers but never fires.
+2. **Guard with `GracefulFeatureStop`** — the platform fires events even
+   during shutdown; processing them races against resource teardown and
+   throws spurious errors in the logs.
+
+```java
+public class CloudDownloadListener extends AbstractCloudDownloadListener
+        implements ICloudDownloadListener, PropertyChangeListener {
+
+    protected void handleFile(String filePath) {
+        // optional — Cloud-downloaded files land here
+    }
+
+    protected void handleContent(String message) {
+        if (GracefulFeatureStop.getInstance().isFeatureStopped()) return;
 
         try {
-            response.type("application/json");
-            return future.get(10, TimeUnit.SECONDS);
-        } catch (TimeoutException e) {
-            ExternalApiRequestManager.getInstance().remove(cid);
-            response.status(504);
-            return "{\"status\":504,\"msg\":\"Gateway Timeout: No response.\"}";
+            JsonObject json = JsonParser.parseString(message).getAsJsonObject();
+            String type = null;
+            if (json.has("correlation-id")) {
+                type = PendingRequestRegistry.getInstance()
+                        .consume(json.get("correlation-id").getAsString());
+            }
+
+            if ("weather".equals(type)) {
+                JsonObject parsed = parseWeatherResponse(json);
+                JsonObject frame = new JsonObject();
+                frame.addProperty("type", "EXT-weather");
+                frame.add("data", parsed);
+                UIWebsocketEndPoint.getInstance().broadcastMessage(frame.toString());
+            } else if (looksLikeFuelPriceResponse(message)) {
+                // V1 fallback: content-based routing for services that
+                // didn't register a type. Save to DB + broadcast.
+                JsonObject frame = new JsonObject();
+                frame.addProperty("type", "EXT-fuel");
+                frame.add("data", JsonParser.parseString(message));
+                UIWebsocketEndPoint.getInstance().broadcastMessage(frame.toString());
+            } else {
+                // Unknown response — pass through raw.
+                UIWebsocketEndPoint.getInstance().broadcastMessage(message);
+            }
         } catch (Exception e) {
-            response.status(500);
-            return errorResponse(e.getMessage());
+            FCALLogs.getInstance().log.error("broadcast failed: " + e.getMessage());
         }
     }
-}
-```
 
-### CloudDownloadListener dispatch (Java)
-
-```java
-public class CloudDownloadListener implements PropertyChangeListener {
     @Override
-    public void propertyChange(PropertyChangeEvent ev) {
-        if (!"download".equals(ev.getPropertyName())) return;
-        String content = ev.getNewValue().toString();
-        JsonObject root = JsonParser.parseString(content).getAsJsonObject();
-        if (!root.has("correlation-id")) return;
-        String cid = root.get("correlation-id").getAsString();
-
-        if (cid.startsWith("HTTP")) {
-            ExternalApiRequestManager.getInstance().notifyResponse(cid, content);
-        } else if (cid.startsWith("WS")) {
-            JsonObject envelope = new JsonObject();
-            envelope.addProperty("type", "external_api_response");
-            envelope.addProperty("correlation-id", cid);
-            envelope.add("data", root.get("data"));
-            UIWebsocketEndPoint.getInstance().broadcast(new Gson().toJson(envelope));
+    public void propertyChange(PropertyChangeEvent evt) {
+        switch (evt.getPropertyName()) {
+            case "CloudMessageReceived": handleContent((String) evt.getNewValue()); break;
+            case "CloudFileReceived":    handleFile((String) evt.getNewValue());    break;
+            default: /* ignore other Cloud events */
         }
     }
 }
 ```
 
-Register once in `ApplicationMain.addCustomUISupport()` (or equivalent
-lifecycle hook):
+### Listener registration
+
+`ApplicationMain` exposes a dedicated lifecycle hook for Cloud listeners:
+
 ```java
-Cloud.getInstance().addPropertyChangeListener(new CloudDownloadListener());
-UIWebServiceProvider.getInstance().registerPostService("extApi", new ExternalApiService());
-UIWebServiceProvider.getInstance().openWebsocket("/socket", UIWebsocketEndPoint.getInstance());
+public void addListenersForDownload() {
+    CloudDownloadListener listener = new CloudDownloadListener();
+    Cloud.getInstance().addPropertyChangeListener(listener);
+}
+
+// In ApplicationMain.main():
+sa.addCustomUISupport();         // REST + WS routes
+sa.addListenersForUserDefinedControls();
+sa.addListenersForDownload();    // ← THIS — easy to forget
+sa.startProviders();
 ```
 
-### Same gotchas as C++
+### Response frame on the WebSocket
 
-- **Register the future BEFORE calling `uploadData`** in Pattern A — same
-  race window, same silent drop if you reverse the order.
-- **`uploadData(payload, 1)`** — second arg is importance, fixed at 1 by
-  convention.
-- **Pattern A 10 s ceiling** — don't extend beyond ~10 s; switch to
-  Pattern B for streaming or long-poll.
-- **D2D listener stub is intentional** — the Device2Device channel
-  exists but `handleMessage` is deliberately empty in the reference
-  projects. Don't copy Cloud dispatch into it unless you have a use case.
+The browser receives:
+```json
+{ "type": "EXT-{domain}", "data": { /* parsed by CloudDownloadListener */ } }
+```
+
+This **differs from the C++ reference**, which broadcasts
+`{"type":"external_api_response","correlation-id":...,"data":...}`. If the
+UI is shared across both apps, branch on `type.startsWith("EXT-")` vs
+`type === "external_api_response"`. The agnote frame intentionally drops
+`correlation-id` because the broadcast is fan-out; UI matches by `type`.
+
+### Common gotchas (Java-specific)
+
+- **`addListenersForDownload()` must run after `initialize(...)` and
+  before `startProviders()`.** Off-order = `Cloud.getInstance()` is null
+  or events fire before the listener registers.
+- **PropertyChange names are case-sensitive strings.** `"cloudmessagereceived"`
+  fails silently. Match exactly: `"CloudMessageReceived"`,
+  `"CloudFileReceived"`.
+- **`PendingRequestRegistry` TTL is 60 s.** Slow upstreams blow past it
+  and the response arrives as untyped — listener falls through to the
+  passthrough branch, UI sees a raw JSON it can't parse. Either raise the
+  TTL with intent, or make the listener tolerate untyped responses
+  (agnote does the latter for fuel-price via content sniffing).
+- **`uploadData` returns the cloud-side ack, not the upstream body.** The
+  upstream body arrives later via the listener. Don't try to parse the
+  return value as your API response.
+- **Catch each `Cloud*Exception` separately.** Generic `catch (Exception)`
+  swallows the auth/network distinction. The reference services all break
+  these out into individual catches with distinct error messages.
+- **D2D listener stub is intentional** — `Device2DeviceDownloadListener`
+  exists but its `handleMessage` is deliberately empty. Don't copy Cloud
+  dispatch into it without a real D2D use case.
 
 ## DB Persistence
 

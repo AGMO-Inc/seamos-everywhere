@@ -108,8 +108,16 @@ customui::UIWebServiceProvider::getInstance()->registerWebsocketRoute("/socket",
 
 > Authoritative spec: https://docs.seamos.io/docs/4/5/4
 >
-> Reference implementations: `external_api_test` (full — both patterns) and
-> `cpp_deploy_test_19` (WebSocket-only variant).
+> C++ reference implementations: `external_api_test` (full — both
+> patterns) and `cpp_deploy_test_19` (WebSocket-only variant).
+>
+> **Java differs in several conventions** — different `uploadData`
+> signature (3-arg with `ConnectionTypeEnum`), no `/extApi` route in the
+> reference, response frame is `EXT-{domain}` instead of
+> `external_api_response`, registry holds type-strings not promises, and
+> the UI sends backend keys directly (no `endPoint→externalUrl` rename).
+> When generating Java, follow `java.md` § External API Server
+> Communication, not this section.
 
 ### Why the indirect path
 

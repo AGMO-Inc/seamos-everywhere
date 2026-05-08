@@ -2,6 +2,44 @@
 
 All notable changes to **seamos-everywhere** are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [SemVer](https://semver.org/) (pre-1.0: minor bumps signal feature additions, patch bumps signal fixes).
 
+## [0.7.7] — 2026-05-08
+
+**Java External API SSOT 정정 — `agnote-core` 흡수.** v0.7.6 의 Java External API 섹션은 C++ 매핑에 의존한 *근사치* 였음. 사용자가 `~/Desktop/Backend/agnote-core` (실제 Java NEVONEX 앱) 를 가리키며 "이걸로 진짜 진행 가능한 상태인지" 물어 갭이 드러남. 그 코드를 SSOT 로 흡수해서 Java 측을 처음부터 검증된 패턴으로 갈아끼움.
+
+### Fixed — Java 패턴 정설화
+
+`skills/seamos-app-framework/references/usage-patterns/java.md` 의 External API 섹션 전면 재작성. 정정된 항목:
+
+- **`uploadData` 시그니처**: `(data, 1)` 2-arg 추측 → 실제 `(data, priority, ConnectionTypeEnum)` **3-arg, 반환 `String`**. `agnote-core` default priority 는 `2` (Medium), C++ 의 `1` 은 다른 프로젝트 컨벤션이었음.
+- **CloudDownloadListener 베이스 클래스**: `implements PropertyChangeListener` (잘못) → **`extends AbstractCloudDownloadListener implements ICloudDownloadListener, PropertyChangeListener`** + `handleContent`/`handleFile` override.
+- **PropertyChange 이벤트명**: `"download"` (잘못) → **`"CloudMessageReceived"`/`"CloudFileReceived"`**. v0.7.6 그대로 따라 짰다면 listener 가 등록은 되지만 영원히 발화 안 하는 silent bug.
+- **`PendingRequestRegistry` 패턴**: `Map<String, CompletableFuture<String>>` (sync 대기) → **`Map<String, String>`** (cid → type-string) + 60 s daemon evict. Java 가 sync 대기하지 않고 type-routed broadcast 하기 때문.
+- **응답 frame**: `external_api_response` (C++) → **`{"type":"EXT-{domain}", "data":...}`** (Java agnote). UI 측 dispatch 가 frame.type 으로 분기해야 함.
+- **broadcast 메서드명**: `broadcast(...)` → **`broadcastMessage(...)`** (`UIWebsocketEndPoint`).
+- **Listener 등록 hook**: `addCustomUISupport()` 안 → **`addListenersForDownload()`** 별도 lifecycle hook (`main()` 에서 `addCustomUISupport` 다음, `startProviders` 전 호출).
+- **`GracefulFeatureStop` 가드** 추가 — 셧다운 중 이벤트 처리 race 방지.
+- **`Cloud*Exception` 개별 catch** — `CloudBadRequestException`, `CloudUnAuthorizedException`, `CloudAccessDeniedException`, `CloudConnectionException`, `PlatformServiceException` 분리. 일반 `catch (Exception)` 는 auth 실패와 network 실패를 못 가림.
+- **Service 변종 분류 변경**: "Pattern A (sync `/extApi`) / Pattern B (async WS)" → **V1 (Cloud Upload ack-only) / V2 (Trigger + type-routed broadcast)**. agnote 에는 Pattern A 가 존재하지 않음 — 모두 `cloud-upload/{name}` REST 라우트가 `uploadData` 를 부르는 변종.
+- **UI envelope key**: agnote 의 UI 는 `endPoint`/`methodSelect` 별칭을 안 쓰고 처음부터 backend 키(`externalUrl`, `method`, `header`, `msg`)로 보냄. C++ reference 의 rename 은 프로젝트 의존 컨벤션으로 격하.
+- **`correlation-id` 형식**: `"HTTP{ms}"`/`"WS{ms}"` (C++) → **UUID v4** (Java agnote). Java 는 prefix 가 dispatch signal 이 아님 (registry 가 type-routing 담당).
+
+### Changed — Cross-language divergence surfaced
+
+- **`skills/seamos-app-framework/references/usage-patterns/cpp.md`** — External API 섹션 헤더에 "Java differs in several conventions — read `java.md`, don't translate from this section" 노트 추가.
+- **`skills/seamos-customui-client/references/cloud-proxy.md`** — Envelope key rename 표를 "Convention A vs B" 로 재구성. Response frame 표 추가 (`external_api_response` vs `EXT-{domain}`). UI dispatch 가 `frame.type` 분기해야 한다는 점 명시.
+- **`skills/seamos-plugins/references/usage-patterns/java.md`** — `Cloud.getInstance().uploadData(data, 1)` 2-arg 인용 → 3-arg `(data, priority, ConnectionTypeEnum.WIFI)` + 반환 `String` (cloud ack, not upstream body) 로 정정.
+- **`skills/seamos-app-framework/SKILL.md`** — 트리거 8개 추가 (`cloud-upload`, `클라우드 업로드`, `PendingRequestRegistry`, `CloudMessageReceived`, `CloudFileReceived`, `ConnectionTypeEnum`, `BaseRestService`, `AbstractCloudDownloadListener`, `EXT-frame`). Pattern Selection 의 External API 항목을 언어별로 분리 ("conventions differ by language — pick the right reference file"). 패턴 표의 External API 행에 "Java/C++ 컨벤션 다름" 경고 추가.
+
+### Why now (사용자 학습 동기)
+
+`agnote-core` 의 `CloudDownloadListener.java` / `PendingRequestRegistry.java` / `FuelPriceCloudUploadService.java` / `WeatherGetService.java` / `ApplicationMain.java` 와 그 프로젝트의 자체 `cloud-upload` 스킬 (service-template + registration-template) 까지 비교한 결과, v0.7.6 의 Java 섹션은 **컴파일은 되지만 listener 가 안 불리는 silent bug** 를 포함한 5~6 개 mismatch 가 있었음. 가장 치명적인 게 `"download"` vs `"CloudMessageReceived"` — 등록만 되고 영원히 발화 안 함. v0.7.7 은 그 갭을 닫는다.
+
+### Notes
+
+- 코드 변경 없음 — 스킬 문서/메타데이터만. 회귀 위험 없음.
+- C++ 섹션은 그대로 유지 (`cpp_deploy_test_19` 검증). 변경된 건 "Java 가 다르다" 는 cross-ref 만.
+- agnote-core 자체 cloud-upload 스킬은 외부 ref 로 링크하지 않음 — 그 스킬은 도메인별 service generator 라 seamos-everywhere 의 generic 스킬과 layer 가 다름.
+
 ## [0.7.6] — 2026-05-08
 
 **External API Server Communication 패턴 도큐먼트화.** 사용자가 SeamOS 앱(C++/Java)에서 외부 HTTPS API 를 호출하는 방법을 물었을 때, 스킬에는 — 공식 문서(https://docs.seamos.io/docs/4/5/4) 와 reference 구현(`external_api_test`, `cpp_deploy_test_19`) 모두 존재함에도 — 패턴이 전혀 들어 있지 않아 매번 raw 코드를 직접 읽고 재구성해야 했음. 이 갭을 메운다. 스킬 본체 코드 변경 없음 (문서 + 트리거 키워드 + cross-reference 만).
