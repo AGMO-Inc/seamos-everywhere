@@ -8,6 +8,9 @@ argument-hint: "--project-name <NAME> [--skip-sdk-app] [--codegen-type CPP|JAVA]
 
 # Create SeamOS Project (FSP + SDK/APP skeleton)
 
+For end-to-end app coordination, follow the shared playbook:
+[`vibe-seamos-app-agent.md`](../../shared-references/vibe-seamos-app-agent.md).
+
 The first step in SeamOS app development. Generates an FSP project and — by default — the SDK / APP skeleton in a single invocation. Pass `--skip-sdk-app` to stop after FSP generation.
 
 UI type is fixed to `"Custom UI"`. Platforms: Windows (WSL2 / Git Bash), Linux, macOS (Apple Silicon included, requires Rosetta 2).

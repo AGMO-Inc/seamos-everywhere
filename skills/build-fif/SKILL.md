@@ -8,6 +8,9 @@ argument-hint: "[project-root] [--type java|cpp] [--arch aarch64|arm32|x86_64] [
 
 # FIF Build
 
+For end-to-end app coordination, follow the shared playbook:
+[`vibe-seamos-app-agent.md`](../../shared-references/vibe-seamos-app-agent.md).
+
 Run the build script immediately. Do not explain — just execute.
 
 ```bash

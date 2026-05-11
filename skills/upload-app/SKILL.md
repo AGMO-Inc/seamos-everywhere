@@ -8,6 +8,9 @@ argument-hint: "[--dry-run]"
 
 # Upload App to SeamOS Marketplace
 
+For end-to-end app coordination, follow the shared playbook:
+[`vibe-seamos-app-agent.md`](../../shared-references/vibe-seamos-app-agent.md).
+
 Upload a SeamOS app package (.fif) with metadata and assets to the SeamOS marketplace via REST API.
 
 ## Prerequisites

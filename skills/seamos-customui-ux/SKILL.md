@@ -29,6 +29,9 @@ description: >
 
 # SeamOS CustomUI UX
 
+For end-to-end app coordination, follow the shared playbook:
+[`vibe-seamos-app-agent.md`](../../shared-references/vibe-seamos-app-agent.md).
+
 User-experience principles every SeamOS CustomUI must follow. The
 operating environment of a SeamOS app is **a screen on a moving
 machine, viewed by an operator whose other hand is on a control
