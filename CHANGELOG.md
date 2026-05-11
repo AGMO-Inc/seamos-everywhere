@@ -2,6 +2,35 @@
 
 All notable changes to **seamos-everywhere** are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [SemVer](https://semver.org/) (pre-1.0: minor bumps signal feature additions, patch bumps signal fixes).
 
+## [0.7.9] — 2026-05-11
+
+**CustomUI ↔ 앱 REST CORS 우회 패턴 문서화 + plugin.json 버전 sync.** UI 에서 앱이 등록한 REST 라우트(`/crops` 등)를 부르면 `CORS policy 로 blocked` / preflight `OPTIONS 404` 가 떴는데, 현재 스킬 어디에도 서버측 CORS 핸들러 패턴이 없었음 (C++ 의 `Access-Control-Allow-Origin` 한 줄은 `/extApi` cloud proxy 응답 한정). 브라우저 측 우회는 SeamOS 에 존재하지 않으므로 (`no-cors` 도 답 아님) 정설 픽스를 Java/C++ 양쪽 스킬에 흡수. SSOT: https://docs.seamos.io/docs/4/6/2/5 ("REST Endpoints & WebSocket" → CORS Handling).
+
+### Fixed — CORS 가이드 부재로 UI↔앱 REST 호출이 항상 깨지던 문제
+
+근본 원인은 origin 불일치다. UI 는 UI gateway 포트(예: 6563)의 `/{featureId}/` 아래에서 서빙되고, 앱이 `registerRoute`/`registerGetService` 로 노출한 REST 라우트는 `get_assigned_ports` 가 돌려주는 **다른 포트**에 산다. 따라서 UI 의 `fetch` 는 *항상* cross-origin → 브라우저가 OPTIONS preflight 를 쏘는데 서버에 핸들러가 없으면 404 → 차단. 우회는 서버에만 존재한다.
+
+- **`skills/seamos-app-framework/references/usage-patterns/cpp.md`** — REST API Convention 섹션에 **CORS Handling** 추가. `NevonexRoute::handleOptions` 오버라이드로 `Access-Control-Allow-Origin / -Methods / -Headers` 세팅 후 204 응답 + 실제 `handleGet`/`handlePost` 응답에도 `Allow-Origin` mirror. 공통 정책은 `CorsRoute` 베이스로 추출하라는 팁과, **prod 에서 `*` 금지** (credentialed request 비활성) 경고 포함.
+- **`skills/seamos-app-framework/references/usage-patterns/java.md`** — 동일 위치에 **CORS Handling** 추가. `addCustomUISupport()` 안에 `UIWebServiceProvider.registerBeforeFilter((req,res) -> { ...Allow-* 헤더... })` (모든 응답에 헤더 주입) + `registerOptionsService("/*", new NevonexRoute() { ... })` (catch-all 200) 한 쌍. before-filter 는 한 번만 등록.
+- **`skills/seamos-customui-client/SKILL.md`** — "Why this exists" 바로 아래 **"CORS — fix on the server, not in the browser"** 섹션 신설. DevTools 증상 3종 (`blocked by CORS policy` / preflight 404 / `Allow-Origin` 누락) → C++·Java 픽스를 한 줄씩 요약한 표 → `seamos-app-framework` 의 "REST API Convention → CORS Handling" 으로 라우팅. Pattern selection 표에도 `"CORS blocked / Allow-Origin 누락 / OPTIONS 404"` 행 추가, Hard rules 에 CORS preflight 항목 추가.
+- **`skills/seamos-customui-client/references/port-discovery.md`** — Failure modes 표 마지막 행에 CORS preflight 항목 추가. fetch 가 404 / WS 가 즉시 끊김 같은 다른 증상과 한 데서 비교 가능.
+
+### Fixed — `plugin.json` 버전이 v0.7.8 sync 누락
+
+v0.7.8 커밋에서 `marketplace.json` 만 0.7.8 로 올리고 `.claude-plugin/plugin.json` 은 0.7.7 에 멈춰 있었음. 이번 릴리즈에서 두 파일 모두 **0.7.9** 로 정렬.
+
+- `.claude-plugin/plugin.json` 0.7.7 → 0.7.9
+- `.claude-plugin/marketplace.json` 0.7.8 → 0.7.9
+
+### Why now (사용자 학습 동기)
+
+사용자가 "UI → 백엔드 API 요청 시 CORS 에러 발생, [doc 4/6/2/5](https://docs.seamos.io/docs/4/6/2/5) 보고 스킬 수정해줘" 라고 직접 지목. 문서가 권하는 두 언어별 정설 패턴 (C++ `handleOptions` / Java `registerBeforeFilter` + `registerOptionsService`) 을 흡수해, 다음 작업부터는 `seamos-customui-client` 또는 `seamos-app-framework` 가 트리거되면 자동으로 잡힌다.
+
+### Notes
+
+- 코드 변경 없음 — 스킬 문서 / reference 만. 회귀 위험 없음.
+- 실제 픽스를 적용할 때 `Access-Control-Allow-Origin: *` 는 LAN 전용 plain-`http` UI 한정. 운영 환경에서 credentialed request 가 필요해지면 origin 을 정확히 지정해야 한다는 점을 두 스킬 모두에 명시.
+
 ## [0.7.8] — 2026-05-08
 
 **Marketplace category taxonomy 갱신 + `deviceTypes` 신규 필드 반영.** backend 의 `create_app` 라이브 스키마를 직접 조회한 결과, `categories` enum 값 5개가 모두 새 이름으로 교체됐고 (`AGRICULTURE`, `CONSTRUCTION`, `DRONE`, `DIAGNOSTICS`, `MATERIALS` → `EASY_WORK`, `FARM_MANAGEMENT`, `DEVICE_MANAGEMENT`, `ENTERTAINMENT`, `TEST`), 호환 기기 타입을 명시하는 `deviceTypes` enum 배열이 신규 required 필드로 추가됨. `upload-app` 스킬과 reference 가 옛 enum 으로 안내하고 있어 따라 짠 사용자는 backend 가 reject. 그 갭을 닫는다.

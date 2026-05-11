@@ -90,6 +90,33 @@ The same `port` value is what you build the `ws://...:${port}/socket` URL
 from — there is exactly one app port per feature instance, shared by REST
 and WebSocket.
 
+### CORS — fix on the server, not in the browser
+
+Because the UI loads from the UI gateway port (`location.origin`) but the
+fetch above targets `host:${wsPort}`, **every app-defined REST call is
+cross-origin**. The browser fires an `OPTIONS` preflight and blocks the
+real request unless the app responds with `Access-Control-Allow-*`
+headers. Symptom in DevTools is one of:
+
+- `Access to fetch at 'http://host:59449/crops' from origin 'http://host:6563' has been blocked by CORS policy`
+- preflight `OPTIONS /crops` returns `404` (no handler registered)
+- the actual `GET /crops` succeeds in the Network tab but the response is
+  unreadable from JS (missing `Allow-Origin` on the response)
+
+There is **no browser-side workaround**. Do not try to "switch to no-cors",
+strip headers, or route through the UI gateway — none of those exist on
+SeamOS. The fix lives in the Java/C++ side:
+
+| Lang | What to register |
+|------|------------------|
+| C++  | Override `handleOptions` on each `NevonexRoute` (or a shared `CorsRoute` base), set `Access-Control-Allow-Origin / -Methods / -Headers`, and mirror `Allow-Origin` on the real `handleGet`/`handlePost` response. |
+| Java | Call `UIWebServiceProvider.registerBeforeFilter((req,res) -> { ...Allow-* headers... })` once in `addCustomUISupport()`, plus `registerOptionsService("/*", ...)` returning `{}` so preflights get `200`. |
+
+See `seamos-app-framework` → "REST API Convention → CORS Handling"
+(both `cpp.md` and `java.md`) for the canonical snippets. Authoritative
+spec: https://docs.seamos.io/docs/4/6/2/5 ("REST Endpoints & WebSocket"
+→ CORS Handling).
+
 ## Workflow
 
 1. **Discover the port** — `references/port-discovery.md`. Always relative
@@ -114,6 +141,7 @@ and WebSocket.
 | "UI needs to call my own REST endpoint (`/crops`, etc.)" | "REST routes use the same port" section above |
 | "UI needs to hit marketplace / cloud API" | cloud-proxy.md |
 | "Why does my fetch get 404?" | port-discovery.md (relative URL gotcha for `get_assigned_ports`); same-port section above (for app-defined REST routes) |
+| "CORS blocked / `Allow-Origin` missing / OPTIONS 404" | "CORS — fix on the server, not in the browser" section above → then `seamos-app-framework` (cpp.md/java.md, "CORS Handling") |
 | "What component should I use for X (Button / Toggle / Modal / ...)?" | UI design system rules + ADS MCP usage live in `seamos-customui-ux` (Foundation rule, vanilla fallback, MCP call flow) |
 
 ## Hard rules
@@ -122,6 +150,11 @@ and WebSocket.
 - **App-defined REST routes go through the assigned port, not the UI gateway.**
   `${location.hostname}:${wsPort}/crops`, never `/crops` or `crops` alone.
   The UI gateway (6563) only serves static assets + `get_assigned_ports`.
+- **CORS preflight must succeed on the server side.** Calling an app REST
+  route is *always* cross-origin (UI gateway port ≠ assigned app port).
+  The browser fix is "no fix" — register `handleOptions` (C++) or
+  `registerBeforeFilter` + `registerOptionsService("/*", ...)` (Java) on
+  the app side. See the CORS section above.
 - **Coerce port to number.** The map's value is typically a string
   (`{"1456": "59449"}`). Use `Number.parseInt(String(raw), 10)` and validate
   with `Number.isFinite`.

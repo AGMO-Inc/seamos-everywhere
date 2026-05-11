@@ -111,6 +111,7 @@ WS frames *and* your REST endpoints. Cache it for the lifetime of the page.
 | `fetch` returns empty `{}` | App not started yet, or feature ID prefix wrong. Retry after a beat. |
 | `Number.isFinite` false | Response shape changed. Log the raw payload before throwing. |
 | WS `error` immediately | Wrong port (e.g. you grabbed the *internal* one — use `Object.values`, not `Object.keys`). |
+| `fetch('${host}:${wsPort}/crops')` blocked by CORS / preflight `OPTIONS` 404 | UI gateway port and assigned app port are different origins. **Server-side fix** — register `handleOptions` (C++) or `registerBeforeFilter` + `registerOptionsService("/*", ...)` (Java) on the app side. See SKILL.md → "CORS — fix on the server, not in the browser" and `seamos-app-framework` → REST API Convention → CORS Handling. |
 
 ## Pattern
 

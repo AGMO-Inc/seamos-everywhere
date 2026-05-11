@@ -73,6 +73,46 @@ public class CropService extends BaseRestService {
 }
 ```
 
+### CORS Handling
+
+The UI is served from the **UI gateway port** under `/{featureId}/...`, but
+the per-method services you register with `registerGetService` /
+`registerPostService` / etc. are served on the **dynamically-assigned app
+port** returned by `get_assigned_ports`. The two origins differ, so any
+non-trivial `fetch` from the UI fires a CORS preflight (`OPTIONS`) — and
+without an explicit handler the app returns `404`, the browser blocks the
+request, and the UI silently fails with a `CORS` error in DevTools.
+
+Wire both pieces inside `addCustomUISupport()`: a **before-filter** that
+injects `Access-Control-*` headers on every response, and a catch-all
+`OPTIONS` service that returns `200` so the preflight passes.
+
+```java
+// 1) Headers on every response (covers actual GET/POST/PUT/DELETE too,
+//    not just OPTIONS — the browser checks these on the real response).
+UIWebServiceProvider.getInstance().registerBeforeFilter((req, res) -> {
+    res.header("Access-Control-Allow-Origin",  "*");
+    res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Content-Type");
+});
+
+// 2) Catch-all preflight handler — returns empty JSON, 200.
+UIWebServiceProvider.getInstance().registerOptionsService("/*", new NevonexRoute() {
+    @Override
+    protected JSONObject processService(Request request, Response response) {
+        return new JSONObject();
+    }
+});
+```
+
+**Tighten `Allow-Origin` to a real origin in production** — `*` disables
+credentialed requests and is only acceptable while the UI is plain-`http`
+LAN-only. The before-filter applies to *every* registered service, so add
+it once at startup, not per-Service.
+
+> Browser side: see `seamos-customui-client` → "Hard rules" for why this
+> preflight happens at all (UI gateway port ≠ assigned app port).
+
 ## WebSocket
 
 ```java

@@ -69,6 +69,51 @@ resp.setStatus(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);    // 404
 
 **Directory convention:** `web/{resource}/` — {Resource}Route.hpp/.cpp + {Resource}RouteFactory.hpp/.cpp
 
+### CORS Handling
+
+The UI is served from the **UI gateway port** under `/{featureId}/...`, but
+the REST routes you register with `registerRoute(...)` are served on the
+**dynamically-assigned app port** returned by `get_assigned_ports`. The two
+origins differ, so any non-trivial `fetch` from the UI fires a CORS
+preflight (`OPTIONS`) — and without an explicit handler the app returns
+`404`, the browser blocks the request, and the UI silently fails with a
+`CORS` error in DevTools.
+
+Override `handleOptions` on the Route (alongside `handleGet` / `handlePost`)
+and set the `Access-Control-*` headers. The same headers should be echoed
+on the actual GET/POST response so the browser accepts the body:
+
+```cpp
+class CropRoute : public ::nevonex::web::server::NevonexRoute {
+public:
+    void handleOptions(Poco::Net::HTTPServerRequest &req,
+                       Poco::Net::HTTPServerResponse &resp) override {
+        resp.set("Access-Control-Allow-Origin",  "*");
+        resp.set("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+        resp.set("Access-Control-Allow-Headers", "Content-Type");
+        resp.setStatus(Poco::Net::HTTPResponse::HTTP_NO_CONTENT);  // 204
+        resp.send();
+    }
+
+    void handleGet(Poco::Net::HTTPServerRequest &req,
+                   Poco::Net::HTTPServerResponse &resp) override {
+        resp.set("Access-Control-Allow-Origin", "*");   // mirror on response
+        resp.setContentType("application/json");
+        std::ostream &out = resp.send();
+        // ... body
+    }
+};
+```
+
+If many routes share the same policy, factor `handleOptions` into a small
+base class (`CorsRoute : public NevonexRoute`) and have each Route inherit
+from it. **Tighten `Allow-Origin` to a real origin in production** — `*`
+disables credentialed requests and is only acceptable while the UI is
+plain-`http` LAN-only.
+
+> Browser side: see `seamos-customui-client` → "Hard rules" for why this
+> preflight happens at all (UI gateway port ≠ assigned app port).
+
 ## WebSocket
 
 ```cpp
