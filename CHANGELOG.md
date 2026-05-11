@@ -2,6 +2,54 @@
 
 All notable changes to **seamos-everywhere** are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [SemVer](https://semver.org/) (pre-1.0: minor bumps signal feature additions, patch bumps signal fixes).
 
+## [0.8.0] — 2026-05-11
+
+**Marketplace TESTING 채널 워크플로우 통합 — `isForTest` 게시 + `install_app_version_on_device` 특정 버전 설치.** backend MCP 가 새로 노출한 두 가지 — (1) `update_app` / `create_app` 의 `variants[].isForTest=true` 플래그로 APPROVED 와 분리된 TESTING 채널 게시, (2) 신규 도구 `install_app_version_on_device(deviceId, appId, version)` 로 APPROVED + TESTING 양쪽의 특정 SemVer 설치 — 를 기존 3개 스킬과 SSOT 캐시에 흡수. 통합 후 사용자는 "테스트 빌드 게시 → 본인 디바이스에서 특정 prerelease 설치 → 검증 → 정식 승급" 사이클을 자연어 명령으로 수행. **회귀 0 원칙**: TESTING 채널을 사용하지 않는 시나리오 (대다수의 정식 게시/설치) 의 UX 는 변경 전과 100% 동일.
+
+### Added — TESTING 채널 워크플로우 SSOT
+
+- **`skills/shared-references/seamos-test-channel.md`** (신규) — 테스트 채널 개념/게시/설치/승급-롤백 4 섹션. backend MCP 응답 스키마는 hardcode 하지 않고 (drift 방지) 도구·필드 의미만 서술. `update-app` / `manage-device-app` / `upload-app` 3 스킬이 모두 이 파일을 cross-link.
+
+### Added — `update-app` 의 `--is-for-test` 인자 + Step 3-1.5 채널 토글
+
+- **`skills/update-app/SKILL.md` Step 3-1.5** (신규 sub-step) — feuType 선택 직후 "테스트 채널 게시? (y/N, Enter → APPROVED)" 질문 신설. `--is-for-test` CLI 인자가 들어오면 질문 *건너뛰고* `isForTest=true` 자동 확정 (자동화 파이프라인 경로).
+- **Step 3-2 (Version Number) 분기** — `isForTest=true` 시 prerelease SemVer 제안 (`1.0.0` → `1.0.1-rc1`, `1.0.1-rc1` → `1.0.1-rc2`). `last_app_register.lastVersion` 캐시 부재 시 patch bump 폴백. prerelease 형식은 *제안*일 뿐 — 사용자가 자유 입력 가능, 클라이언트측 정규식 검증 금지 (backend reject 위임).
+- **Step 4 Confirm** — 요약 블록에 "버전 채널: APPROVED / TESTING" 한 줄 추가.
+- **Step 5-1 Request JSON** — `"isForTest": false` 하드코딩 → `"isForTest": ${isForTest}` 변수화. APPROVED 게시 예시 + TESTING 게시 예시 (별도 코드블록 2개) 표기.
+- **`update-app` frontmatter** — `argument-hint` 에 `[--is-for-test]` 추가, description 에 "테스트 버전" 키워드.
+
+### Added — `update-app/scripts/update.sh` 의 `--is-for-test` flag
+
+- 인자 파싱에 boolean flag 추가. flag 지정 시 jq 로 `--request` JSON 의 `variants[].isForTest=true` 머지. **호출자 우선** (`has("isForTest") then . else . + {isForTest: true} end`) — 호출자가 직접 박은 `isForTest:false` 는 덮어쓰지 않음.
+- `jq` 부재 시 fatal 아닌 stderr warning + 그대로 진행. flag 미지정 시 페이로드 byte-equivalent 보장 (회귀 0).
+
+### Added — `manage-device-app` 의 Step 4A-i TESTING 분기 + Step 4B-i 다운그레이드 가드
+
+- **Step 4A-i (TESTING 채널 분기)** — 앱 선택 직후 `get_app_status(appId)` 호출. TESTING 버전이 존재하면 3지선다 화면 ("(1) APPROVED 최신 (2) TESTING `1.0.1-rc1` (3) 다른 SemVer 직접 입력"). 선택에 따라 `install_app_on_device` 또는 `install_app_version_on_device(deviceId, appId, version)` 호출. TESTING 미존재 시 추가 질문 *없이* 곧바로 기존 흐름 (회귀 0).
+- **Step 4B-i (Prerelease Downgrade Guard)** — Update 액션 직전, 현재 설치된 버전이 SemVer prerelease (`-rc`, `-beta`, `-alpha` 접미사) 면 "정식 APPROVED 로 교체되어 다운그레이드 발생, 계속? (y/N, Enter → 취소)" 경고. stable 버전 설치 시 *완전 스킵* (회귀 0).
+- **Step 1 Shortcut path** — `install --device X --app Y --version Z` 가 모두 들어오면 질문 0회 자동화 경로. `--version` 만 들어오면 Step 4A-i 만 스킵하고 나머지는 인터랙티브. `--version` 은 `install` 전용 — `update`/`uninstall` 과 함께 들어오면 무시 (에러 X).
+- **Step 5 install 분기** — `install_app_on_device` (latest APPROVED) + `install_app_version_on_device` (specific SemVer) 두 분기로 확장.
+- **MCP Tools 표** — `install_app_version_on_device`, `get_app_status` 두 행 추가. 기존 7 도구 행은 위치/문구 그대로.
+- **frontmatter** — `argument-hint` 에 `[--version <semver>]`, description 에 "테스트 버전" 키워드.
+
+### Changed — `shared-references/seamos-context-cache.md` 의 `last_app_register` 확장
+
+- 두 필드 추가: `isForTest` (boolean, default `false`) + `lastVersion` (string, SemVer). 다음 `update-app` 호출 시 채널 디폴트 / patch bump base 추정에 사용.
+- **Graceful fallback**: 구버전 `.seamos-context.json` 에 두 필드가 부재해도 `isForTest=false`, `lastVersion=null` 로 폴백, 사용자에게 재질문하지 않음. 마이그레이션 코드 불필요.
+- JSON 예시, read/write 책임 단락, 흐름 다이어그램 모두 갱신.
+
+### Changed — `upload-app` 의 `isForTest=true` 검증 우회 명시
+
+- **Step 3B-2** — `isForTest=true` (TESTING 채널 게시) 시 backend 가 `email` / `phoneNumber` / `categories` / `deviceTypes` / `pricingType` / `countries` / `languages` 메타데이터를 옵션으로 수용 (TESTING 은 published metadata 불필요). 기존 `isForTest=false` required 로직은 변경하지 않음.
+- description 에 "테스트 버전" 키워드, Important Notes 에 새 SSOT cross-link.
+
+### Notes
+
+- 영향 파일 6개 (신규 1 + 수정 5): 신규 `seamos-test-channel.md`, 수정 `seamos-context-cache.md` / `update-app/SKILL.md` / `update-app/scripts/update.sh` / `manage-device-app/SKILL.md` / `upload-app/SKILL.md`.
+- 백엔드 / MCP 서버 변경 없음 — 클라이언트(스킬) 통합만. 마켓플레이스 MCP 가 이미 노출한 도구를 그대로 사용.
+- TDD 단위 테스트 인프라 부재로 검증은 dry-run 워크스루로 대체. architect 가 4 회귀 시나리오 (TESTING 미보유 install, TESTING 보유 install, `--is-for-test` 미지정 update, 명시 update) 모두 PASS 확인.
+- TESTING → APPROVED 자동 승급 로직은 본 릴리즈에서 다루지 않음 (후속 작업).
+
 ## [0.7.9] — 2026-05-11
 
 **CustomUI ↔ 앱 REST CORS 우회 패턴 문서화 + plugin.json 버전 sync.** UI 에서 앱이 등록한 REST 라우트(`/crops` 등)를 부르면 `CORS policy 로 blocked` / preflight `OPTIONS 404` 가 떴는데, 현재 스킬 어디에도 서버측 CORS 핸들러 패턴이 없었음 (C++ 의 `Access-Control-Allow-Origin` 한 줄은 `/extApi` cloud proxy 응답 한정). 브라우저 측 우회는 SeamOS 에 존재하지 않으므로 (`no-cors` 도 답 아님) 정설 픽스를 Java/C++ 양쪽 스킬에 흡수. SSOT: https://docs.seamos.io/docs/4/6/2/5 ("REST Endpoints & WebSocket" → CORS Handling).

@@ -1,9 +1,9 @@
 ---
 name: manage-device-app
-description: Manage apps on SeamOS devices — install, update, or uninstall apps via SeamOS MCP tools. Use this skill whenever the user wants to install an app on their device, update an installed app to the latest version, remove/uninstall an app from a device, check installed apps, or view their device list. Triggers on "디바이스에 앱 설치", "앱 설치해줘", "앱 업데이트", "앱 삭제", "앱 제거", "install app on device", "uninstall app", "update app on device", "내 디바이스", "설치된 앱", "device app manage". Also triggers when the user mentions a specific device and wants to do something with apps on it, even if they don't say "install" explicitly.
+description: Manage apps on SeamOS devices — install, update, or uninstall apps via SeamOS MCP tools. Use this skill whenever the user wants to install an app on their device, update an installed app to the latest version, remove/uninstall an app from a device, check installed apps, or view their device list. Triggers on "디바이스에 앱 설치", "앱 설치해줘", "앱 업데이트", "앱 삭제", "앱 제거", "install app on device", "uninstall app", "update app on device", "내 디바이스", "설치된 앱", "device app manage". Also triggers when the user mentions a specific device and wants to do something with apps on it (including 테스트 버전 install), even if they don't say "install" explicitly.
 user-invocable: true
 allowed-tools: Read, Glob, Grep, Bash
-argument-hint: "[install|update|uninstall] [--device <id>] [--app <id>]"
+argument-hint: "[install|update|uninstall] [--device <id>] [--app <id>] [--version <semver>]"
 ---
 
 # Manage Device Apps
@@ -32,6 +32,8 @@ All tools are from the `seamos-marketplace-local` server:
 | `list_apps` | Get user's app list (for install) |
 | `list_installed_apps` | Get apps on a specific device |
 | `install_app_on_device` | Install an app (latest approved version) |
+| `install_app_version_on_device` | Install a specific SemVer — supports both APPROVED and TESTING channels |
+| `get_app_status` | Get app status and per-version channel info (APPROVED/TESTING) |
 | `update_app_on_device` | Update an installed app to latest version |
 | `uninstall_app_from_device` | Remove an app from device |
 | `get_task_status` | Poll installation/update/uninstall progress |
@@ -49,6 +51,13 @@ This skill reads/writes all fields (`deviceId`, `deviceName`, `appId`, `appName`
 Call `list_devices` to get the user's device list. This is always needed regardless of the action.
 
 **Shortcut path:** If the user provides enough context upfront (e.g., "디바이스 42에 앱 10250 설치해줘"), parse device ID, app ID, and action from the message. Verify the device is online via `list_devices`, then skip directly to Step 5 (Confirm and Execute). If the device is offline, inform the user and fall through to Step 2 for alternative selection.
+
+**Shortcut path with `--version` (install 전용):** 사용자가 `--version <semver>` 인자를 함께 넘긴 경우, Step 4A 의 인터랙티브 버전 선택 화면(`4A-i`)을 *건너뛰고* 곧바로 `install_app_version_on_device(deviceId, appId, version)` 호출로 진입한다.
+
+- **완전 자동화**: `--device <id> --app <id> --version <semver>` 가 모두 들어왔으면 device online 확인 후 *질문 0회* 로 즉시 실행 (Step 5 의 Confirm 도 자동 진행).
+- **부분 인자**: `--version` 만 있고 `--device`/`--app` 중 하나라도 빠지면 일반 인터랙티브 흐름으로 폴백 (Step 2/3/4 진행). 단, Step 4A 에서 버전 선택 화면을 *스킵* 하고 `--version` 값을 그대로 사용하여 `install_app_version_on_device` 호출.
+- **action 제약**: `--version` 은 `install` 액션 *전용*. `update` / `uninstall` 액션과 함께 들어오면 무시하고 일반 흐름 진행 (에러 던지지 말 것 — 단순 무시).
+- **값 검증**: SemVer 값의 클라이언트측 정규식 검증 금지. backend 가 reject 하면 일반적인 오류 처리 흐름 사용.
 
 **Simple queries:** For read-only queries like "내 디바이스 보여줘" or "설치된 앱 확인", call the relevant MCP tool and display the result directly — no need for the full workflow.
 
@@ -143,6 +152,27 @@ Compare the two lists and show apps that are **not yet installed** on the device
 
 **Wait for user response.**
 
+#### 4A-i. Version Channel Selection (TESTING 채널 분기)
+
+앱이 선택되면 `get_app_status(appId)` 를 호출하여 해당 앱의 버전별 status (APPROVED / TESTING) 를 조회한다.
+
+- **TESTING 버전이 존재하지 않으면** → 추가 질문 없이 곧바로 Step 5 로 진행 (기존 흐름 100% 유지, 회귀 0). 사용자는 새 단계를 인지하지 못한다.
+- **TESTING 버전이 존재하면** → 3지선다 화면을 노출:
+
+  ```
+  ## 어느 버전을 설치할까요?
+
+  1. 최신 승인 버전: {latestApproved} (APPROVED)
+  2. 테스트 버전: {latestTesting} (TESTING)
+  3. 다른 SemVer 직접 입력
+  ```
+
+  - 선택 1 → 일반 install 경로 (`install_app_on_device`)
+  - 선택 2 → `install_app_version_on_device(deviceId, appId, latestTesting)` 사용
+  - 선택 3 → 사용자에게 SemVer 입력 받고 `install_app_version_on_device(deviceId, appId, <user input>)` 사용. **클라이언트측 SemVer 정규식 검증 금지** (backend reject 위임).
+
+**Fallback**: `get_app_status` 호출이 실패하면 (네트워크/권한 오류) install 자체를 차단하지 않는다 — 기존 `install_app_on_device` 경로로 폴백하고 콘솔에 warning 1 줄 출력.
+
 #### 4B. Update (설치된 앱 업데이트)
 
 Use the `list_installed_apps` result (already fetched in Step 3, or fetch now).
@@ -162,6 +192,27 @@ Show only apps that **have updates available**:
 If no updates are available, tell the user: "모든 앱이 최신 버전입니다." and stop.
 
 **Wait for user response.**
+
+#### 4B-i. Prerelease Downgrade Guard
+
+선택된 앱의 현재 설치 버전(`list_installed_apps` 또는 캐시에서 조회)이 SemVer prerelease 접미사(`-rc`, `-beta`, `-alpha` 중 하나) 를 포함하면, `update_app_on_device` 가 호출될 경우 *APPROVED 최신* 버전으로 교체되어 **다운그레이드** 가 발생할 수 있다. 다음 경고를 노출하고 명시 확인을 받는다:
+
+```
+⚠️ 다운그레이드 경고
+
+현재 디바이스에 테스트 버전 {currentVersion} (예: 1.0.1-rc1) 이 설치되어 있습니다.
+업데이트하면 정식 승인 버전 (APPROVED 최신) 으로 교체됩니다 — 테스트 버전 → 정식 버전 다운그레이드.
+
+계속 진행하시려면 y, 다른 테스트 버전 설치를 원하시면 install 명령으로 가주세요.
+(y/N, Enter → 취소)
+```
+
+- 사용자가 `y`/`yes` → 기존 update 흐름 진행 (Step 5 로 이동).
+- Enter / `n`/`no` / 기타 입력 → update 취소, 사용자에게 "취소되었습니다. 다른 버전 설치는 install 을 사용해주세요." 안내 후 종료.
+
+**Fallback**: `list_installed_apps` 조회가 실패하면 (네트워크/캐시 오류) update 자체를 차단하지 않는다 — 경고 없이 기존 update 흐름 진행, 콘솔에 warning 1 줄 ("현재 설치 버전을 확인하지 못해 다운그레이드 가드를 건너뜁니다.").
+
+현재 설치 버전이 stable (prerelease 접미사 없음, 예: `1.0.0`) 이면 이 단계는 *완전히 스킵* — 사용자는 추가 질문을 인지하지 못한다 (회귀 0).
 
 #### 4C. Uninstall (앱 삭제)
 
@@ -199,7 +250,8 @@ Show a summary and ask for confirmation:
 **Wait for user confirmation.** Do not execute until the user says yes.
 
 After confirmation, call the appropriate MCP tool:
-- Install → `install_app_on_device(deviceId, appId)`
+- Install (latest APPROVED) → `install_app_on_device(deviceId, appId)`
+- Install (specific version, including TESTING) → `install_app_version_on_device(deviceId, appId, version)`
 - Update → `update_app_on_device(deviceId, appId)`
 - Uninstall → `uninstall_app_from_device(deviceId, appId)`
 
@@ -276,5 +328,6 @@ After any successful action (install, update, or uninstall), update `.seamos-con
 
 - This skill uses `seamos-marketplace-local` MCP tools, not `seamos-marketplace`. The local server handles device-specific operations.
 - Always show device online/offline status so the user knows what to expect.
-- The `install_app_on_device` installs the **latest approved version** — there's no version selection for install.
+- The `install_app_on_device` installs the **latest approved version** — there's no version selection for install. For TESTING channel or pinned-SemVer installs, use `install_app_version_on_device` (see Step 4A-i).
 - When the user just wants to check status (devices, installed apps), respond directly without walking through the full install/update/uninstall flow.
+- For TESTING channel workflow (publish → install → promote), see `skills/shared-references/seamos-test-channel.md`.

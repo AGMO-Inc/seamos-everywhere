@@ -195,6 +195,8 @@ Writes use `flock` when available, falling back to a `mkdir`-based lock director
 | `last_app_register.arch` | string | 마지막 등록의 ARCH 토큰 (예: `RCU4-3Q`) |
 | `last_app_register.appId` | string | 마지막 등록 대상 appId — 다른 appId 호출 시 캐시 무용 |
 | `last_app_register.updatedAt` | string (ISO 8601) | 마지막 갱신 시각 |
+| `last_app_register.isForTest` | boolean (default `false`) | 직전 게시가 TESTING 채널이었는지 여부. 다음 update-app 호출 시 디폴트 채널 추정에 사용. |
+| `last_app_register.lastVersion` | string (SemVer) | 직전 게시 성공한 버전 (예: `1.0.1`, `1.0.1-rc1`). 다음 update-app 호출의 patch bump base. |
 
 ### 읽기/쓰기 책임
 
@@ -203,6 +205,8 @@ Writes use `flock` when available, falling back to a `mkdir`-based lock director
 | `update-app` | fallback 블록 + FeuType 캐시 흐름 | 등록 성공 후 4 개 필드 갱신 |
 
 다른 스킬은 본 영역을 읽거나 쓰지 않는다.
+
+graceful fallback: `isForTest` / `lastVersion` 필드가 캐시에 부재한 경우 (구버전 캐시) `isForTest=false`, `lastVersion=null` 로 간주하고 사용자에게 재질문하지 않는다.
 
 ### JSON 예시
 
@@ -221,7 +225,9 @@ Writes use `flock` when available, falling back to a `mkdir`-based lock director
     "feuType": "arable/cabin",
     "arch": "RCU4-3Q",
     "appId": "app_test_001",
-    "updatedAt": "2026-04-29T11:30:00Z"
+    "updatedAt": "2026-04-29T11:30:00Z",
+    "isForTest": false,
+    "lastVersion": "1.0.1"
   }
 }
 ```
@@ -229,7 +235,7 @@ Writes use `flock` when available, falling back to a `mkdir`-based lock director
 ### 사용 흐름
 
 1. `update-app` 시작 시 `last_app_register.appId` 가 현재 호출의 appId 와 일치하는지 검사한다.
-2. 일치하면 `last_app_register.feuType` 를 후보 목록의 *첫 항목* 으로 제시한다 ("(last used)" 라벨). 자동 채택은 하지 않는다.
+2. 일치하면 `last_app_register.feuType` 를 후보 목록의 *첫 항목* 으로 제시한다 ("(last used)" 라벨). 자동 채택은 하지 않는다. 이때 `isForTest` / `lastVersion` 두 신규 필드도 함께 조회하여 기본 채널/버전 제안에 사용한다.
 3. appId 가 다르면 본 영역을 무시한다 — 다른 앱의 등록 흔적이므로 후보로 노출하지 않는다.
-4. 등록이 성공적으로 끝나면 4 개 필드를 갱신한다. 실패한 시도는 캐시에 쓰지 않는다.
+4. 등록이 성공적으로 끝나면 4 개 필드를 갱신하며, 게시 성공 응답의 `isForTest` / `version` 값으로 두 신규 필드도 함께 갱신한다. 실패한 시도는 캐시에 쓰지 않는다.
 5. 본 영역에는 캐시 만료(TTL) 정책이 없다 — appId 일치 여부만으로 유효성을 판단한다.

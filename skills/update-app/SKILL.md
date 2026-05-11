@@ -1,9 +1,9 @@
 ---
 name: update-app
-description: Upload a new version of an existing SeamOS app to the SeamOS marketplace. Use this skill whenever the user wants to update, upgrade, or push a new version of their app. Triggers on "앱 업데이트", "버전 업데이트", "새 버전 올려", "update app", "new version", "버전 업로드", "앱 버전". Also use when the user mentions updating a .fif file for an app that already exists on the marketplace, or wants to deploy a patch/update to a released app.
+description: Upload a new version of an existing SeamOS app to the SeamOS marketplace. Use this skill whenever the user wants to update, upgrade, or push a new version of their app. Triggers on "앱 업데이트", "버전 업데이트", "새 버전 올려", "update app", "new version", "버전 업로드", "앱 버전". Also use when the user mentions updating a .fif file for an app that already exists on the marketplace, or wants to deploy a patch/update to a released app (테스트 버전 포함).
 user-invocable: true
 allowed-tools: Read, Glob, Grep, Bash, Write, Edit
-argument-hint: "[appId] [--feu-type FEU] [--arch ARCH] [--dry-run]"
+argument-hint: "[appId] [--feu-type FEU] [--arch ARCH] [--is-for-test] [--dry-run]"
 ---
 
 # Update App Version on SeamOS Marketplace
@@ -121,6 +121,9 @@ If appId is not found → warn user and go back to selection.
 컨텍스트 캐시(`.seamos-context.json`) 의 `last_app_register` 영역을 읽고 쓴다.
 
 - **읽기 (fallback 단계)**: `last_app_register.feuType`, `last_app_register.arch`, `last_app_register.appId`, `last_app_register.updatedAt` 4개 필드를 읽는다. 현재 호출의 appId 와 캐시의 `last_app_register.appId` 가 *일치하는 경우에만* 후보 목록의 첫 항목으로 `<feuType> (last used)` 를 제시한다. **사용자 선택 없이 캐시 값을 그대로 반영하지 않으며 — 제시(suggest) 만 한다.**
+- **추가 필드**:
+  - `isForTest` (boolean) — 직전 게시가 TESTING 채널이었는지. 다음 update-app 호출 시 채널 디폴트 추정에 사용. 부재 시 `false` 로 폴백.
+  - `lastVersion` (string, SemVer) — 직전 게시 성공한 버전 (예: `1.0.1`, `1.0.1-rc1`). Step 3-2 의 patch bump base 로 사용. 부재 시 `get_app_status` 결과로 폴백.
 - **appId 불일치**: 캐시의 appId 와 다르면 lastFeuType 후보를 노출하지 않는다 — 다른 앱의 등록 흔적이므로 무용.
 - **쓰기 (등록 성공 후)**: 등록이 성공적으로 끝나면 같은 4개 필드를 갱신한다 (`updatedAt` 은 ISO 8601). 실패한 등록 시도는 캐시에 쓰지 않는다.
 - 본 영역은 다른 스킬이 사용하지 않는다 — `last_project`, 디바이스/앱 캐시 영역과 분리되어 있다 (`shared-references/seamos-context-cache.md` 참고).
@@ -162,6 +165,26 @@ appId=app_test_001, feuType=arable/cabin, ARCH=RCU4-3Q, version=20 으로 업로
 
 위 4-tuple (appId, feuType, ARCH, target version) 을 모두 표시하여 사용자에게 최종 확인을 받는다.
 
+#### 3-1.5. Test Channel Toggle (테스트 채널 게시 여부)
+
+`--is-for-test` CLI 인자가 들어왔다면 이 질문을 *건너뛰고* `isForTest=true` 로 확정한다 (자동화 경로).
+
+인자가 없으면 사용자에게 묻는다:
+
+```
+## 이 버전을 테스트 채널(TESTING)로 게시할까요?
+
+TESTING 으로 게시하면 본인/조직 디바이스에서만 사전 설치/검증 가능합니다.
+정식 사용자는 받지 못합니다 (APPROVED 채널만 받음).
+
+(y/N, Enter → APPROVED 채널 게시)
+```
+
+- 사용자가 `y`/`yes` 입력 → `isForTest=true` 로 확정.
+- Enter / `n`/`no` / 기타 입력 → `isForTest=false` (디폴트, 기존 동작 보존).
+
+본 sub-step 의 결과(`isForTest` 값)는 이후 Step 3-2 의 버전 제안 분기 및 Step 5-1 의 request JSON 직렬화에 사용된다.
+
 #### 3-2. Version Number
 
 Suggest an auto-incremented version based on the current version from Step 2-2. Use patch increment by default:
@@ -174,6 +197,12 @@ Suggest an auto-incremented version based on the current version from Step 2-2. 
 
 Enter를 누르면 1.0.1로 설정됩니다. 다른 버전을 원하시면 입력해주세요. (예: 1.1.0, 2.0.0)
 ```
+
+**채널별 제안 규칙**:
+- `isForTest=false` (APPROVED, 디폴트) → 기존 patch bump 제안 (예: `1.0.0` → `1.0.1`).
+- `isForTest=true` (TESTING) → prerelease 접미사를 붙인 SemVer 제안 (예: `1.0.0` → `1.0.1-rc1`, 이미 prerelease 상태인 `1.0.1-rc1` → `1.0.1-rc2`). 컨텍스트 캐시(`last_app_register.lastVersion`) 가 있으면 그 값을 base 로 한다.
+- prerelease 형식은 *제안*일 뿐 — 사용자가 자유 입력 가능 (`-beta.1`, `-alpha`, 임의 SemVer 모두 허용). 클라이언트측 형식 검증 금지.
+- `lastVersion` 캐시가 없으면 (첫 update) `isForTest=true` 여도 기존 patch bump 로 폴백.
 
 **Wait for user response.** If the user sends an empty message or confirms, use the suggested version.
 
@@ -206,6 +235,7 @@ Show full summary before proceeding:
 ### 새 버전
 - 기기: {feuType}
 - 버전: {currentVersion} → {newVersion}
+- 버전 채널: {channel}  ← `isForTest=true` → TESTING, `isForTest=false` → APPROVED
 - 앱 패키지: {filename}.fif
 
 ### 업데이트 노트
@@ -237,7 +267,7 @@ The request JSON structure for update is fixed:
     {
       "feuType": "{selected feuType}",
       "version": "{new version}",
-      "isForTest": false,
+      "isForTest": ${isForTest},
       "info": [
         {
           "locale": "ko",
@@ -252,6 +282,8 @@ The request JSON structure for update is fixed:
 
 Assemble the request JSON using the values collected in Steps 3-4:
 
+**예시 1 — APPROVED 채널 게시 (`isForTest=false`)**:
+
 ```json
 {
   "variants": [
@@ -264,6 +296,27 @@ Assemble the request JSON using the values collected in Steps 3-4:
           "locale": "ko",
           "title": "버그 수정",
           "updateDescription": "안정성을 개선했습니다."
+        }
+      ]
+    }
+  ]
+}
+```
+
+**예시 2 — TESTING 채널 게시 (`isForTest=true`)**:
+
+```json
+{
+  "variants": [
+    {
+      "feuType": "AUTO-IT_RV-C1000",
+      "version": "1.0.1-rc1",
+      "isForTest": true,
+      "info": [
+        {
+          "locale": "ko",
+          "title": "테스트 빌드",
+          "updateDescription": "내부 검증용 빌드."
         }
       ]
     }
@@ -327,12 +380,21 @@ After a successful upload (2xx response), update `.seamos-context.json` at the w
      "updatedAt": "{ISO 8601 timestamp}"
    }
    ```
-3. Write the file using the Write tool
+3. Also update the `last_app_register` block with the 6 fields below (preserve any existing keys not listed):
+   - `feuType: ${feuType}`
+   - `arch: ${arch}`
+   - `appId: ${appId}`
+   - `updatedAt: ${ISO 8601 timestamp}`
+   - `isForTest: ${isForTest}` — value resolved in Step 3-1.5
+   - `lastVersion: ${publishedVersion}` — the version confirmed by the user in Step 3-2, taken from the successful publish response
+4. Write the file using the Write tool
 
 This ensures the next skill invocation (whether `update-app` or `manage-device-app`) can reuse the app selection.
 
 ## Important Notes
 
 For shared rules (API key masking, feuType matching, file path conventions), see `skills/shared-references/seamos-common-rules.md`.
+
+For TESTING channel workflow (publish → install → promote), see `skills/shared-references/seamos-test-channel.md`.
 
 **Update-app specific:** No config.json dependency. This skill collects all input interactively and does not read or write `seamos-assets/config.json` — that file belongs to `upload-app`.

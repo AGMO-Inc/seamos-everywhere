@@ -1,6 +1,6 @@
 ---
 name: upload-app
-description: Upload a SeamOS app (.fif) to the SeamOS marketplace. Use this skill whenever the user wants to publish, upload, deploy, or register an app to the marketplace. Triggers on "앱 업로드", "앱 등록", "마켓플레이스에 올려", "upload app", "publish app", "deploy app", "앱 배포". Also use when the user has a .fif file and wants to get it onto the SeamOS marketplace, even if they don't say "upload" explicitly.
+description: Upload a SeamOS app (.fif) to the SeamOS marketplace. Use this skill whenever the user wants to publish, upload, deploy, or register an app to the marketplace. Triggers on "앱 업로드", "앱 등록", "마켓플레이스에 올려", "upload app", "publish app", "deploy app", "앱 배포". Also use when the user has a .fif file and wants to get it onto the SeamOS marketplace, even if they don't say "upload" explicitly (테스트 버전 게시 포함).
 user-invocable: true
 allowed-tools: Read, Glob, Grep, Bash, Write, Edit
 argument-hint: "[--dry-run]"
@@ -166,6 +166,7 @@ If the MCP schema was unavailable (Step 1A failed), skip the diff and proceed wi
 1. Check required fields are present and non-empty (see `references/config-enum-values.md` for the SSOT enum lists):
    - Always required: `info`, `variants`
    - Required when `isForTest=false`: `email`, `phoneNumber`, `categories`, `deviceTypes`, `pricingType`, `countries`, `languages`
+   - **`isForTest=true` (TESTING 채널 게시) 인 경우**: backend 가 `email`, `phoneNumber`, `categories`, `deviceTypes`, `pricingType`, `countries`, `languages` 메타데이터를 옵션으로 수용한다 — TESTING 은 published metadata 가 불필요하므로 검증 우회. 자세한 워크플로우는 `shared-references/seamos-test-channel.md` 참조.
    - `categories` must be a non-empty array of enum values (`EASY_WORK | FARM_MANAGEMENT | DEVICE_MANAGEMENT | ENTERTAINMENT | TEST`)
    - `deviceTypes` must be a non-empty array of enum values (`TRACTOR | RICE_TRANSPLANTER | CULTIVATOR | COMBINE | MULTI_CULTIVATOR`)
    - `ownershipType` (optional) must be `ORGANIZATION | DEVELOPER` if present
@@ -256,6 +257,7 @@ The `--request` JSON is built from config.json fields, mapped to the API schema 
 ## Important Notes
 
 For shared rules (API key masking, feuType matching, file path conventions), see `skills/shared-references/seamos-common-rules.md`.
+For TESTING channel workflow (publish → install → promote), see `skills/shared-references/seamos-test-channel.md`.
 
 **Upload-app specific rules:**
 - When generating the config template, use the MCP schema from `create_app` to ensure field names match the API exactly. The template must include ALL fields from the schema — both required and optional — with appropriate default values (empty string for strings, 0 for numbers, false for booleans, empty array for arrays). Users should see every available option upfront so they can fill in what they need without guessing what fields exist.

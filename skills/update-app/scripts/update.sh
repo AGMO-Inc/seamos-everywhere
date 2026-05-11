@@ -28,6 +28,9 @@ Multi-variant flag (cannot mix with --feu-type/--fif/--arch):
   --app-file TYPE PATH  feuType name and path to .fif file (can repeat)
 
 Optional:
+  --is-for-test         Mark this version as TESTING channel (merges isForTest=true
+                        into --request JSON variants[] if absent; caller-provided
+                        isForTest values are preserved)
   --dry-run             Print the curl command without executing
   -h, --help            Show this help
 EOF
@@ -44,6 +47,7 @@ FEU_TYPE=""
 FIF_PATH=""
 ARCH=""
 BUILD_DIR="./seamos-assets/builds"
+IS_FOR_TEST="false"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -57,6 +61,7 @@ while [[ $# -gt 0 ]]; do
     --fif)        FIF_PATH="$2"; shift 2 ;;
     --arch)       ARCH="$2"; shift 2 ;;
     --build-dir)  BUILD_DIR="$2"; shift 2 ;;
+    --is-for-test) IS_FOR_TEST="true"; shift ;;
     --dry-run)    DRY_RUN=true; shift ;;
     -h|--help)    usage ;;
     *)            echo "Unknown option: $1"; usage ;;
@@ -115,6 +120,18 @@ fi
 for ((i=1; i<${#APP_FILES[@]}; i+=2)); do
   [[ -f "${APP_FILES[$i]}" ]] || { echo "Error: App file not found: ${APP_FILES[$i]}"; exit 1; }
 done
+
+# --is-for-test flag is set only when the user explicitly requested the TESTING
+# channel. Merge isForTest=true into variants[] of --request JSON only when the
+# caller did NOT already provide that key — caller wins on conflict, so a
+# caller-supplied `isForTest: false` is preserved. No flag = no payload change.
+if [[ "$IS_FOR_TEST" == "true" ]]; then
+  if command -v jq >/dev/null 2>&1; then
+    REQUEST_JSON=$(echo "$REQUEST_JSON" | jq '.variants |= map(if has("isForTest") then . else . + {isForTest: true} end)')
+  else
+    echo "[update.sh] warning: --is-for-test was set but \`jq\` is not installed; --request JSON not modified. Install jq or set isForTest directly in --request." >&2
+  fi
+fi
 
 # Build curl command
 CURL_ARGS=(
