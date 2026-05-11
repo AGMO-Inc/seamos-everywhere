@@ -19,6 +19,9 @@ description: >
 
 # SeamOS App Framework
 
+For end-to-end app coordination, follow the shared playbook:
+[`vibe-seamos-app-agent.md`](../../shared-references/vibe-seamos-app-agent.md).
+
 Guide for developing SeamOS apps with REST APIs, WebSocket communication, database persistence, and feature lifecycle management.
 
 ## Quick Start

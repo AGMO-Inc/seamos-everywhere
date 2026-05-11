@@ -22,6 +22,9 @@ description: >
 
 # SeamOS CustomUI Client
 
+For end-to-end app coordination, follow the shared playbook:
+[`vibe-seamos-app-agent.md`](../../shared-references/vibe-seamos-app-agent.md).
+
 Browser-side companion to `seamos-app-framework`. The app's Java/C++ side
 opens a WebSocket at `/socket` (see that skill); this skill is everything the
 HTML/JS inside CustomUI needs to **find that socket, talk to it, and proxy

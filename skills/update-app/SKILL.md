@@ -8,6 +8,9 @@ argument-hint: "[appId] [--feu-type FEU] [--arch ARCH] [--is-for-test] [--dry-ru
 
 # Update App Version on SeamOS Marketplace
 
+For end-to-end app coordination, follow the shared playbook:
+[`vibe-seamos-app-agent.md`](../../shared-references/vibe-seamos-app-agent.md).
+
 Upload a new version (.fif) of an existing app to the SeamOS marketplace. Unlike `upload-app` (which creates a brand-new app with full metadata and images), this skill only requires variant info and the app package file.
 
 This skill does NOT use config.json. All version info is collected interactively from the user, one question at a time.

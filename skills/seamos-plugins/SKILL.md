@@ -13,6 +13,9 @@ description: >
 
 # SEAMOS Plugin Reference
 
+For end-to-end app coordination, follow the shared playbook:
+[`vibe-seamos-app-agent.md`](../../shared-references/vibe-seamos-app-agent.md).
+
 Guide for developing SeamOS apps using NEVONEX plugin Machine objects.
 
 ## Quick Start
