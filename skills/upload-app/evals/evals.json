@@ -1,0 +1,71 @@
+[
+  {
+    "name": "upload_assets_missing_scaffold",
+    "description": "When the marketplace MCP config exists but seamos-assets is missing, upload-app should scaffold the asset directory and stop before upload.",
+    "input": {
+      "prompt": "/upload-app 마켓플레이스 업로드용 seamos-assets 구조를 만들어줘",
+      "setup": {
+        "fixtures": [
+          {
+            "type": "write",
+            "path": "/tmp/upload-eval-scaffold/.mcp.json",
+            "content": "{\n  \"mcpServers\": {\n    \"sdm-marketplace\": {\n      \"url\": \"http://localhost:8088/mcp\",\n      \"headers\": {\n        \"X-API-Key\": \"test-key\"\n      }\n    }\n  }\n}\n"
+          }
+        ]
+      }
+    },
+    "expected": {
+      "selected_skill": "upload-app",
+      "assistant_must_include": [
+        "seamos-assets",
+        "config.json",
+        "builds",
+        "screenshots"
+      ],
+      "assistant_must_not_include": [
+        "uploaded successfully",
+        "업로드 완료"
+      ]
+    }
+  },
+  {
+    "name": "upload_requires_marketplace_config",
+    "description": "When marketplace MCP config is missing, upload-app should stop and guide the user to configure SDM marketplace access.",
+    "input": {
+      "prompt": "/upload-app 새 SeamOS 앱을 마켓플레이스에 올려줘",
+      "setup": {
+        "fixtures": [
+          { "type": "mkdir", "path": "/tmp/upload-eval-no-mcp/seamos-assets/builds" },
+          { "type": "mkdir", "path": "/tmp/upload-eval-no-mcp/seamos-assets/screenshots" }
+        ]
+      }
+    },
+    "expected": {
+      "selected_skill": "upload-app",
+      "assistant_must_include": [
+        ".mcp.json",
+        "sdm-marketplace"
+      ],
+      "assistant_must_not_include": [
+        "uploaded successfully",
+        "업로드 완료"
+      ]
+    }
+  },
+  {
+    "name": "upload_not_for_cloud_signal_upload",
+    "description": "Cloud signal upload feature work is plugin/app-framework context, not marketplace app upload.",
+    "input": {
+      "prompt": "GPS와 CAN 신호를 읽고 cloud upload까지 하는 SeamOS 앱 기능 추가해줘"
+    },
+    "expected": {
+      "selected_skills": [
+        "seamos-app-framework",
+        "seamos-plugins"
+      ],
+      "excluded_skills": [
+        "upload-app"
+      ]
+    }
+  }
+]
