@@ -3,13 +3,15 @@ name: seamos-customui-client
 description: >
   SeamOS apps serve their CustomUI through a per-feature reverse proxy with
   a dynamically assigned WebSocket port. Browser code that ignores this
-  produces silently broken output on every device — 404s on absolute paths,
+  produces silently broken output on every device — 404s on absolute paths
+  (including bundled asset references), broken external font/CDN requests,
   hardcoded port failures, malformed WS frames, CORS errors on cloud APIs.
   Use this skill for any HTML/JS that lives inside a SeamOS app's UI surface
   (monitor pages, control buttons, topic streams, charts, WS publishes,
   marketplace/cloud API calls) — even when the user frames it as a generic
-  web problem like "fetch 404", "WS not connecting", "CORS blocked", or
-  "how do I read this stream in the browser". Covers `get_assigned_ports`
+  web problem like "fetch 404", "image/font 404 on device", "Google Fonts
+  not loading", "WS not connecting", "CORS blocked", or "how do I read this
+  stream in the browser". Covers `get_assigned_ports`
   port discovery, the four-frame WS protocol (publish / publish_ack /
   topic / external_api_response), payload.PL parsing, the correlation-id
   cloud-proxy envelope for external HTTPS, and the UI ⇄ backend envelope
@@ -117,6 +119,89 @@ See `seamos-app-framework` → "REST API Convention → CORS Handling"
 spec: https://docs.seamos.io/docs/4/6/2/5 ("REST Endpoints & WebSocket"
 → CORS Handling).
 
+### Static assets and fonts: bundle everything, reference relatively
+
+The FIF web server serves the UI under a per-feature prefix
+(`/{featureId}/...`) — the same gotcha that affects `get_assigned_ports`
+applies to **every asset reference**. Any leading slash escapes the
+prefix and 404s on device, even though the page renders fine in a
+laptop preview where the prefix doesn't exist. This covers
+`<img src>`, `<link href>`, `<script src>`, CSS `@import`, CSS
+`url(...)`, and any `fetch(...)` for static JSON/text.
+
+```html
+<!-- WRONG — escapes /{featureId}/ on device → 404 -->
+<img src="/assets/logo.png">
+<link rel="stylesheet" href="/styles/main.css">
+<script src="/js/app.js"></script>
+
+<!-- CORRECT — resolves under /{featureId}/ -->
+<img src="assets/logo.png">
+<link rel="stylesheet" href="./styles/main.css">
+<script src="./js/app.js"></script>
+```
+
+CSS-specific traps:
+
+```css
+/* WRONG */
+.hero { background: url("/img/bg.png"); }
+@import "/styles/tokens.css";
+
+/* CORRECT — relative to the stylesheet's own location */
+.hero { background: url("../img/bg.png"); }
+@import "./tokens.css";
+```
+
+Bundler defaults emit absolute URLs and must be flipped:
+
+| Bundler | Setting |
+|---------|---------|
+| Vite    | `base: './'` in `vite.config.*` |
+| webpack | `output.publicPath: ''` (or `'./'`) |
+| Parcel  | `--public-url ./` |
+| CRA     | `"homepage": "."` in `package.json` |
+
+**Fonts and CDN resources must be bundled — the device has no internet
+access for browser-initiated resource loads.** Google Fonts, CDN-hosted
+CSS/JS, icon sets pulled from `cdnjs`/`unpkg` — all silently fail.
+The cloud-proxy envelope (`references/cloud-proxy.md`) is only for
+app-controlled `fetch()` calls; `<link>` / `<script>` / `@font-face` /
+`<img>` requests fire directly from the browser and **cannot** traverse
+the WS proxy.
+
+```html
+<!-- WRONG — request never resolves on device, font silently falls back -->
+<link href="https://fonts.googleapis.com/css2?family=Inter" rel="stylesheet">
+```
+
+```css
+/* CORRECT — woff2 lives inside the UI bundle */
+@font-face {
+  font-family: 'Inter';
+  src: url('../assets/fonts/Inter-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+```
+
+Recommended layout (mirrors the SSOT path that `init-customui` writes
+to `.seamos-workspace.json.ui.activeSrcPath`):
+
+```
+customui-src/        # react SSOT (or deep ui/ directly in vanilla mode)
+├── assets/
+│   ├── fonts/       # *.woff2 — bundle every weight you actually use
+│   ├── img/
+│   └── icons/
+└── styles/
+```
+
+Verify before flashing to a device: open the build output, search for
+`https://` and leading-slash asset paths. If either appears in emitted
+HTML/CSS/JS for resources the device should load, it's a future
+production bug.
+
 ## Workflow
 
 1. **Discover the port** — `references/port-discovery.md`. Always relative
@@ -141,12 +226,26 @@ spec: https://docs.seamos.io/docs/4/6/2/5 ("REST Endpoints & WebSocket"
 | "UI needs to call my own REST endpoint (`/crops`, etc.)" | "REST routes use the same port" section above |
 | "UI needs to hit marketplace / cloud API" | cloud-proxy.md |
 | "Why does my fetch get 404?" | port-discovery.md (relative URL gotcha for `get_assigned_ports`); same-port section above (for app-defined REST routes) |
+| "Image / font / CSS works locally but 404s on device" | "Static assets and fonts" section above (leading-slash + bundler `base` settings) |
+| "Google Fonts / CDN script / external icon set not loading on device" | "Static assets and fonts" section above (no internet for browser-initiated resource loads; bundle everything) |
 | "CORS blocked / `Allow-Origin` missing / OPTIONS 404" | "CORS — fix on the server, not in the browser" section above → then `seamos-app-framework` (cpp.md/java.md, "CORS Handling") |
 | "What component should I use for X (Button / Toggle / Modal / ...)?" | UI design system rules + ADS MCP usage live in `seamos-customui-ux` (Foundation rule, vanilla fallback, MCP call flow) |
 
 ## Hard rules
 
 - **Relative URL for `get_assigned_ports`.** Never `/get_assigned_ports`.
+- **All static asset paths are relative.** No leading slash on
+  `<img src>`, `<link href>`, `<script src>`, CSS `url(...)`, CSS
+  `@import`, or asset `fetch(...)`. Same per-feature prefix gotcha as
+  `get_assigned_ports`: a leading slash escapes `/{featureId}/` and 404s
+  on device while looking fine in laptop preview. Configure the bundler
+  (`base: './'` for Vite, etc.) so emitted URLs stay relative.
+- **No external resource fetches at page load.** Fonts, CDN-hosted
+  CSS/JS, icon sets — everything the browser loads via `<link>`,
+  `<script>`, `<img>`, `@font-face`, or `@import` must be bundled into
+  the UI artifact. The device has no internet for browser-initiated
+  resource loads, and the cloud-proxy WS envelope only carries
+  app-controlled `fetch()` calls — not parser-initiated resource loads.
 - **App-defined REST routes go through the assigned port, not the UI gateway.**
   `${location.hostname}:${wsPort}/crops`, never `/crops` or `crops` alone.
   The UI gateway (6563) only serves static assets + `get_assigned_ports`.

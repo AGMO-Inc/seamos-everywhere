@@ -89,6 +89,7 @@ SeamOS 앱별 CustomUI 디렉터리 레이아웃을 초기화한다. **vanilla**
 - `--reset` 은 삭제 전 confirm — 파괴적 가드.
 - 부분 상태 복구: clone 실패 시 `customui-src.tmp.*` 정리; `npm install` 실패 시 `customui-src/` 보존하여 수동 재시도 가능.
 - Deploy path auto-patch 실패는 비차단 — WARN + 수동 가이드만 출력.
+- **Asset/font 번들링 규약** — 폰트·이미지·CDN 리소스는 `customui-src/assets/{fonts,img,icons}/` (react) 또는 deep `ui/` 내부 (vanilla) 에 내장하고 **상대 경로**로 참조. 절대 경로(`/assets/...`)와 외부 폰트 URL(`https://fonts.googleapis.com/...`)은 랩탑 프리뷰에선 동작하지만 실기기 배포 시 무조건 깨진다 (per-feature prefix 이탈 + 기기 인터넷 부재). 상세 규칙·번들러 설정·예제 코드는 `seamos-customui-client` → "Static assets and fonts: bundle everything, reference relatively".
 - Exit codes: `0` = OK / no-op / skip, `64` = usage / preflight (workspace JSON 부재, deep ui/ 부재, app_project_name 미해석, non-interactive 파괴적 전환), `65` = data fault (malformed workspace JSON), `73` = preflight tool 미존재, `74` = network / IO (`git clone`, `npm install`).
 
 ## Shared Components
