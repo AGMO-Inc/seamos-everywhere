@@ -7,7 +7,7 @@
 **Claude Code plugin for the SeamOS AI Native developer ecosystem**
 
 [![Version](https://img.shields.io/badge/version-0.8.0-blue.svg)](https://github.com/AGMO-Inc/seamos-everywhere/releases)
-[![Skills](https://img.shields.io/badge/skills-15-orange.svg)](#skills)
+[![Skills](https://img.shields.io/badge/skills-16-orange.svg)](#skills)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey.svg)](LICENSE)
 [![Org](https://img.shields.io/badge/org-AGMO--Inc-green.svg)](https://github.com/AGMO-Inc)
 
