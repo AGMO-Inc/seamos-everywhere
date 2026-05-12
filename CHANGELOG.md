@@ -2,6 +2,66 @@
 
 All notable changes to **seamos-everywhere** are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [SemVer](https://semver.org/) (pre-1.0: minor bumps signal feature additions, patch bumps signal fixes).
 
+## [0.9.0] — 2026-05-12
+
+**두 레이아웃 호환성 — `.seamos-context.json` 5필드 frozen contract + `resolve-paths.sh` SSOT helper 도입.** SeamOS workspace 는 두 레이아웃이 공존한다 — Layout A (nested, plugin `create-project` 기본값: `$USER_ROOT/$PROJECT_NAME/$PROJECT_NAME/com.bosch.fsp.*`) 와 Layout B (flat, seamos-IDE 기본값: `$USER_ROOT/com.bosch.fsp.*`). 다수 스크립트가 한쪽 레이아웃의 경로 합성식을 하드코딩하고 있어 다른 레이아웃에서 무음 실패했다. 본 릴리즈는 (1) 정규화된 경로를 `.seamos-context.json > last_project` 의 5필드 SSOT 로 격상, (2) 6개 스킬을 path-derivation helper 로 위임, (3) 기존 디스크에 적응할 수 있는 `setup --adopt` 모드를 추가해 호환성을 확보한다. **회귀 0 원칙**: Layout A (nested) 위에서 모든 변경 스킬의 dry-run 출력이 v0.8.0 과 byte-identical (단 `regen-sdk-app` 의 `MOUNT_ROOT=` 1라인 추가는 expected).
+
+### Added — `.seamos-context.json` frozen 5필드 contract
+
+- **`skills/shared-references/seamos-context-cache.md`** — `last_project` 의 정규화 5필드 (`fsp_path`, `sdk_project_path`, `app_project_path`, `customui_src_path`, `deep_ui_path`) + advisory `layout_kind` (`nested|flat|unknown`) 스키마 frozen. 모든 read/write 가 이 contract 를 따른다. Field ownership 표 + Backward-compat 정책 명시.
+- **SSOT 우선순위**: (1) `.seamos-context.json > last_project.<5필드>` (모두 존재 시), (2) `.seamos-workspace.json > ui.activeSrcPath` (customui 한정), (3) 디스크 추론. Mismatch 시 helper 는 stderr warn 만 출력하고 context 값을 우선, 자동 동기화 X.
+
+### Added — `resolve-paths.sh` path-derivation helper (372 라인)
+
+- **`skills/shared-references/scripts/resolve-paths.sh`** (신규) — 10개 변수 export: `LAYOUT_KIND`, `WORKSPACE_PATH`, `FSP_PATH`, `SDK_PROJECT_PATH`, `APP_PROJECT_PATH`, `CUSTOMUI_SRC_PATH`, `DEEP_UI_PATH`, `APP_PROJECT_PATH_CONTAINER`, `FSP_PATH_CONTAINER`, `MOUNT_ROOT`. read-only, mtime 불변, bash 3.2 호환.
+- **`skills/shared-references/scripts/test/resolve-paths/test.sh`** (180 라인) + 6 fixture (F1-nested-full, F2-flat-full, F3-no-context-nested, F4-no-context-flat, F5-mismatched-ssot, F6-partial-context). **44/44 GREEN**. `__USER_ROOT__` 토큰 치환 + EXIT trap 복원 패턴.
+
+### Added — `setup.sh --adopt` 모드 + non-destructive invariant (TDD)
+
+- **`skills/setup/scripts/setup.sh`** 482 → **709 라인 (+227)**. 신규 플래그 `--adopt` / `--force` / `--update-gitignore`. 기존 default 모드 동작 무변경.
+- 기존 디스크에서 5필드를 추론해 `.seamos-context.json` 한 파일에만 write. `.metadata`, `IDT_OFFLINE_DATA`, `com.bosch.fsp.*`, `<P>_<A>`, `<P>_CPP_SDK`, `customui-src` 모두 read-only. `.gitignore` 자동 갱신은 별도 옵트인 (`--update-gitignore`), 디폴트 OFF.
+- **`skills/setup/scripts/test/adopt/`** (신규) — 4 fixture (nested-pristine / flat-pristine / partial-context / mismatched-ssot) + test.sh. **39/39 pass**. exit code 매트릭스 6개 직접 검증 (0/3/4/5/65/66). Non-destructive invariant: 5 시나리오 모두 sha256 byte-identical, mtime 불변.
+
+### Added — E2E 검증 layer
+
+- **`skills/shared-references/scripts/test/e2e/dry-run.sh`** (458 라인, Tier 1 — 필수) — 8 dry-run × F1/F2 fixture + adopt 백업/복구 round-trip + flat WARN 가드 검증 = **21/21 pass**. F1 byte-identical, F2 flat 경로, F1 silent (WARN 미출현), F2 WARN 출현 모두 검증. docker 미사용, CI 이식성.
+- **`skills/shared-references/scripts/test/e2e/docker-once.sh`** (110 라인, Tier 2 — 선택) — `DOCKER=1` env 시 F2 fixture × `regen-sdk-app` 실제 docker 1회. daemon/image 없으면 auto-skip + exit 0.
+
+### Changed — 6개 스킬 layout-aware 화
+
+- **`create-project.sh:L713-740`** — Stage 1B 후 `.seamos-context.json > last_project` 에 정규화 5필드 + `layout_kind=nested` 단일 트랜잭션 write. atomic mv 패턴, jq 임시 파일.
+- **`init-customui.sh`** (+166 / -25) — `update_ssot_pair` 단일 트랜잭션 함수 신설. `.seamos-context.json > customui_src_path` 와 `.seamos-workspace.json > ui.activeSrcPath` 동시 갱신, 한쪽 fail 시 양쪽 mtime 불변. F1/F2 두 SSOT 절대경로 동일 확인.
+- **`build-fif.sh:L235-246`** — dead code 12 라인 제거 + helper 위임 4 라인. Maven/CMake 자동 감지 보존, Docker mount path 무변경. F1 byte-identical.
+- **`run-app/SKILL.md`** + **`run-app.sh:L181/213/220`** + **`run-via-fd-cli.sh:L109-137`** — `Required env (auto-resolved from context if absent)` 섹션 신설. CANDIDATES 배열에 flat 패턴 (`${USER_ROOT}`, `${USER_ROOT}/${APP}_${APP}`) 추가, nested 보존 (역호환). `auto-resolved (nested|flat|unknown)` 표시. env > context > disk 우선순위. `RUNAPP_USER_ROOT` env override 신설 (외부 프로젝트/E2E).
+- **`regen-sdk-app.sh:L197/200/217/237-238 + L300`** + **`SKILL.md`** — container-internal path (`APP_PROJECT_PATH_CONTAINER`, `FSP_PATH_CONTAINER`) 와 mount root (`MOUNT_ROOT`) 모두 helper export 활용. flat 의 mount root 가 `$USER_ROOT` 로 climb (형제 디렉토리 visibility 확보). dry-run 출력에 `MOUNT_ROOT=` 1줄 추가.
+- **`edit-plugins.sh:L314-345`** — `sdk_log` 합성식 helper 위임 + 안내 메시지의 `<APP>_CPP_SDK/src-gen/nevonex/` 절대경로 출력. **부수 효과**: v0.8.0 의 nested 로그 경로 버그 (`workspace_path/run-sdk-app-update.log` vs 실제 위치) 가 helper 위임으로 함께 fix.
+
+### Added — flat 감지 시 stderr WARN 가드 (run-app / regen-sdk-app)
+
+- `run-app.sh:L198-203`, `run-via-fd-cli.sh:L140-145`, `regen-sdk-app.sh:L213-218` — `LAYOUT_KIND=flat` 감지 시 stderr 한 줄: `[WARN] Layout B (flat) 감지 — 이 스킬은 plugin create-project (nested) 산출물 전용입니다. seamos-IDE 산출물에서는 동작이 보장되지 않을 수 있습니다.`
+- nested / unknown → silent. abort 하지 않음 (호환성 유지, 그대로 진행).
+- run-app SKILL.md / regen-sdk-app SKILL.md 의 Prerequisites 섹션에 "plugin (nested) 산출물 전용" 명시. description / trigger 문구는 무변경.
+
+### Fixed
+
+- **edit-plugins 의 nested 로그 경로** — v0.8.0 까지 `workspace_path/run-sdk-app-update.log` 로 합성했으나 실제 FD 가 떨어뜨리는 위치는 `app_project_path` 부모. v0.9.0 의 helper 위임이 이 nested 케이스를 정확히 fix.
+- **setup.sh 의 `eval "[[ ... ]] && var=..."` 패턴 abort** — `set -euo pipefail` 환경에서 false 평가 시 스크립트가 abort 되던 패턴을 `if; then; fi` 로 교체.
+- **setup.sh 의 `jq -r '.field // "default"'` null 처리** — JSON `null` 값도 default 로 fallback 하던 문제를 `has(...)` 별도 호출로 키 존재 검사 분리.
+
+### 회귀 0 검증
+
+- F1 (nested) 위 모든 변경 스킬 dry-run = v0.8.0 byte-identical (regen-sdk-app `MOUNT_ROOT=` 1라인 추가는 expected diff)
+- helper test 44/44 GREEN, setup --adopt test 39/39 pass, E2E Tier 1 21/21 pass
+- TESTING 채널 / marketplace 흐름 / device 관리 UX 무영향
+
+### Notes
+
+- `update-app`, `upload-app`, `manage-device-app` — 영향 없음 (`seamos-assets/` 만 사용, workspace path 미참조)
+- run-app / regen-sdk-app 의 flat 동작은 호환성 차원에서 유지. seamos-IDE 사용자는 IDE GUI 로 동일 작업 권장.
+- **v2.1 follow-up 후보**: `project_origin` frozen contract 확장 (`plugin-create-project | seamos-ide | unknown`), setup 인터랙티브 origin 질의, 모든 스킬 origin-aware 분기. 별도 brainstorming → plan → execute 사이클로 분리.
+
+---
+
 ## [0.8.0] — 2026-05-11
 
 **Marketplace TESTING 채널 워크플로우 통합 — `isForTest` 게시 + `install_app_version_on_device` 특정 버전 설치.** backend MCP 가 새로 노출한 두 가지 — (1) `update_app` / `create_app` 의 `variants[].isForTest=true` 플래그로 APPROVED 와 분리된 TESTING 채널 게시, (2) 신규 도구 `install_app_version_on_device(deviceId, appId, version)` 로 APPROVED + TESTING 양쪽의 특정 SemVer 설치 — 를 기존 3개 스킬과 SSOT 캐시에 흡수. 통합 후 사용자는 "테스트 빌드 게시 → 본인 디바이스에서 특정 prerelease 설치 → 검증 → 정식 승급" 사이클을 자연어 명령으로 수행. **회귀 0 원칙**: TESTING 채널을 사용하지 않는 시나리오 (대다수의 정식 게시/설치) 의 UX 는 변경 전과 100% 동일.

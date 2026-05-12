@@ -6,6 +6,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 SHARED_FIND_USER_ROOT="$SCRIPT_DIR/../../shared-references/scripts/find-user-root.sh"
+SHARED_RESOLVE_PATHS="$SCRIPT_DIR/../../shared-references/scripts/resolve-paths.sh"
 TEMPLATE_MCP_JSON="$SKILL_DIR/assets/.mcp.json.template"
 
 # ─── Defaults / args ───────────────────────────────────────────────────────
@@ -15,6 +16,9 @@ RECONFIGURE=0
 NON_INTERACTIVE=0
 DRY_RUN=0
 SCOPE_OVERRIDE=""  # --scope project|user (B1)
+ADOPT=0            # --adopt: import existing on-disk layout into .seamos-context.json (TODO 8)
+FORCE=0            # --force: allow overwrite on existing context / SSOT mismatch (adopt only)
+UPDATE_GITIGNORE=0 # --update-gitignore: opt-in gitignore mutation (adopt only); default OFF
 
 usage() {
   cat <<EOF
@@ -35,12 +39,26 @@ Options:
   --reconfigure                 Allow overwrite/merge prompts when files differ
   --non-interactive             Never prompt; defaults applied (skip on conflict)
   --dry-run                     Print intended writes without mutating anything
+  --adopt                       Import existing on-disk SeamOS layout into
+                                <USER_ROOT>/.seamos-context.json (5 normalized
+                                fields). Writes ONLY .seamos-context.json —
+                                no other file is touched.
+  --force                       (adopt) Permit overwrite of an existing
+                                .seamos-context.json and resolve SSOT
+                                mismatches by trusting on-disk inference.
+  --update-gitignore            (adopt) Opt-in: append SeamOS markers to
+                                <USER_ROOT>/.gitignore. Default OFF.
   --help                        Show this help and exit 0
 
 Exit codes:
   0   OK / no-op (idempotent re-run, dry-run, preflight warnings only)
+  3   adopt: multiple project candidates on disk (cannot pick <P>)
+  4   adopt: layout is neither nested nor flat
+  5   adopt: existing .seamos-context.json without --force
   64  usage error (bad args / unresolvable workspace dir)
-  65  data fault (existing workspace JSON malformed)
+  65  adopt: SSOT mismatch between context and disk (without --force) OR
+      data fault (existing workspace JSON malformed)
+  66  adopt: disk inference failed (no com.bosch.fsp.* under USER_ROOT)
   74  reserved for network / IO failures (unused here)
 
 Last line of stdout is one of:
@@ -67,6 +85,9 @@ while [[ $# -gt 0 ]]; do
     --reconfigure)     RECONFIGURE=1; shift ;;
     --non-interactive) NON_INTERACTIVE=1; shift ;;
     --dry-run)         DRY_RUN=1; shift ;;
+    --adopt)           ADOPT=1; shift ;;
+    --force)           FORCE=1; shift ;;
+    --update-gitignore) UPDATE_GITIGNORE=1; shift ;;
     --scope)
       if [[ $# -lt 2 ]]; then err "--scope requires a value"; exit 64; fi
       case "$2" in
@@ -153,6 +174,212 @@ else
   USER_ROOT="$(pwd -P)"
 fi
 log "[user-root] $USER_ROOT"
+
+# ─── --adopt mode (TODO 8) ────────────────────────────────────────────────
+# Writes ONLY <USER_ROOT>/.seamos-context.json. Every other file on disk is
+# treated as read-only. Exits before reaching the default-mode write blocks
+# (.mcp.json / .seamos-workspace.json / seamos-assets/).
+if [[ $ADOPT -eq 1 ]]; then
+  if ! command -v jq >/dev/null 2>&1; then
+    err "jq is required for --adopt"
+    exit 65
+  fi
+
+  CTX_FILE="$USER_ROOT/.seamos-context.json"
+
+  # --- Step A1: disk inference (read-only) -----------------------------------
+  # Finds com.bosch.fsp.<P> under USER_ROOT (depth ≤ 3), determines layout,
+  # locates SDK/APP/customui paths. Mirrors resolve-paths.sh logic but kept
+  # local so we can distinguish "disk truth" from "context truth" for the
+  # mismatch check below.
+  ADOPT_FSP_DIR=""
+  ADOPT_PROJECT=""
+  ADOPT_LAYOUT=""
+  ADOPT_WORKSPACE=""
+  ADOPT_FSP=""
+  ADOPT_SDK=""
+  ADOPT_APP=""
+  ADOPT_DEEP=""
+  ADOPT_CUI=""
+
+  # Locate fsp dirs (could be more than one → error)
+  FSP_MATCHES="$(find "$USER_ROOT" -maxdepth 3 -type d -name 'com.bosch.fsp.*' 2>/dev/null)"
+  FSP_COUNT="$(printf '%s\n' "$FSP_MATCHES" | grep -c . || true)"
+  if [[ "$FSP_COUNT" == "0" ]]; then
+    err "no com.bosch.fsp.* directory found under $USER_ROOT — cannot infer project"
+    exit 66
+  fi
+  if [[ "$FSP_COUNT" -gt 1 ]]; then
+    err "multiple com.bosch.fsp.* candidates under $USER_ROOT — refuse to guess <P>:"
+    printf '%s\n' "$FSP_MATCHES" >&2
+    exit 3
+  fi
+  ADOPT_FSP_DIR="$(printf '%s' "$FSP_MATCHES" | head -1)"
+  ADOPT_FSP="$(cd "$ADOPT_FSP_DIR" && pwd -P)"
+  ADOPT_PROJECT="$(basename "$ADOPT_FSP")"
+  ADOPT_PROJECT="${ADOPT_PROJECT#com.bosch.fsp.}"
+
+  # Layout determination — see resolve-paths.sh for the same rules:
+  #   flat   → parent(fsp) == USER_ROOT
+  #   nested → parent(fsp) is two levels under USER_ROOT and a sibling
+  #            .metadata dir exists at the workspace level
+  ADOPT_FSP_PARENT="$(dirname "$ADOPT_FSP")"
+  if [[ "$ADOPT_FSP_PARENT" == "$USER_ROOT" ]]; then
+    ADOPT_LAYOUT="flat"
+    ADOPT_WORKSPACE="$USER_ROOT"
+  elif [[ "$(dirname "$ADOPT_FSP_PARENT")" != "$USER_ROOT" ]] && \
+       [[ -d "$(dirname "$ADOPT_FSP_PARENT")/.metadata" ]]; then
+    ADOPT_LAYOUT="nested"
+    ADOPT_WORKSPACE="$(dirname "$ADOPT_FSP_PARENT")"
+  else
+    err "layout is neither nested nor flat — fsp at $ADOPT_FSP under $USER_ROOT"
+    exit 4
+  fi
+
+  # SDK / APP discovery within fsp-parent
+  ADOPT_WS_DIR="$ADOPT_FSP_PARENT"
+  ADOPT_SDK_CANDIDATE=""
+  ADOPT_APP_CANDIDATE=""
+  while IFS= read -r d; do
+    [[ -z "$d" ]] && continue
+    base="$(basename "$d")"
+    case "$base" in
+      "${ADOPT_PROJECT}_CPP_SDK"|"${ADOPT_PROJECT}_SDK")
+        [[ -z "$ADOPT_SDK_CANDIDATE" ]] && ADOPT_SDK_CANDIDATE="$d"
+        ;;
+      "${ADOPT_PROJECT}_"*)
+        if [[ -z "$ADOPT_APP_CANDIDATE" ]]; then
+          ADOPT_APP_CANDIDATE="$d"
+        fi
+        ;;
+    esac
+  done < <(find "$ADOPT_WS_DIR" -maxdepth 1 -mindepth 1 -type d -name "${ADOPT_PROJECT}_*" 2>/dev/null)
+
+  if [[ -z "$ADOPT_SDK_CANDIDATE" ]]; then
+    err "SDK directory (${ADOPT_PROJECT}_CPP_SDK or ${ADOPT_PROJECT}_SDK) not found in $ADOPT_WS_DIR"
+    exit 66
+  fi
+  if [[ -z "$ADOPT_APP_CANDIDATE" ]]; then
+    err "APP directory (${ADOPT_PROJECT}_*) not found in $ADOPT_WS_DIR"
+    exit 66
+  fi
+
+  ADOPT_SDK="$(cd "$ADOPT_SDK_CANDIDATE" && pwd -P)"
+  ADOPT_APP="$(cd "$ADOPT_APP_CANDIDATE" && pwd -P)"
+  ADOPT_DEEP="$ADOPT_APP/ui"
+
+  if [[ -d "$ADOPT_WORKSPACE/customui-src" ]]; then
+    ADOPT_CUI="$(cd "$ADOPT_WORKSPACE/customui-src" && pwd -P)"
+  else
+    ADOPT_CUI=""
+  fi
+
+  log "[adopt] layout=$ADOPT_LAYOUT project=$ADOPT_PROJECT workspace=$ADOPT_WORKSPACE"
+
+  # --- Step A2: existing-context handling -----------------------------------
+  # If .seamos-context.json exists:
+  #   - read its 5 normalized fields (if all present), compare to disk-inferred
+  #     values. Any difference → SSOT mismatch.
+  #   - without --force: exit 5 on bare existence, exit 65 on detected mismatch
+  #   - with --force: proceed and let disk truth win
+  if [[ -f "$CTX_FILE" ]]; then
+    if [[ $FORCE -ne 1 ]]; then
+      # Check whether 5 fields exist + match disk truth. If 1+ fields missing →
+      # treat as a generic existing-context conflict (exit 5).
+      CTX_FSP="$(jq -r '.last_project.fsp_path // ""' "$CTX_FILE" 2>/dev/null || echo "")"
+      CTX_SDK="$(jq -r '.last_project.sdk_project_path // ""' "$CTX_FILE" 2>/dev/null || echo "")"
+      CTX_APP="$(jq -r '.last_project.app_project_path // ""' "$CTX_FILE" 2>/dev/null || echo "")"
+      CTX_DEEP="$(jq -r '.last_project.deep_ui_path // ""' "$CTX_FILE" 2>/dev/null || echo "")"
+      CTX_CUI_KEY_PRESENT="$(jq -r 'if (.last_project | has("customui_src_path")) then "1" else "0" end' "$CTX_FILE" 2>/dev/null || echo "0")"
+      CTX_CUI_RAW="$(jq -r '.last_project.customui_src_path // ""' "$CTX_FILE" 2>/dev/null || echo "")"
+      for v in CTX_FSP CTX_SDK CTX_APP CTX_DEEP CTX_CUI_RAW; do
+        eval "if [[ \"\${$v}\" == \"null\" ]]; then $v=\"\"; fi"
+      done
+      if [[ -z "$CTX_FSP" || -z "$CTX_SDK" || -z "$CTX_APP" || -z "$CTX_DEEP" || "$CTX_CUI_KEY_PRESENT" != "1" ]]; then
+        err "existing .seamos-context.json present (partial 5-field set) — pass --force to overwrite from disk"
+        exit 5
+      fi
+      # 5 fields complete — verify each against disk truth
+      MISMATCH_REASONS=""
+      if [[ "$CTX_FSP"  != "$ADOPT_FSP"  ]]; then MISMATCH_REASONS="$MISMATCH_REASONS fsp_path(ctx=$CTX_FSP disk=$ADOPT_FSP)"; fi
+      if [[ "$CTX_SDK"  != "$ADOPT_SDK"  ]]; then MISMATCH_REASONS="$MISMATCH_REASONS sdk_project_path(ctx=$CTX_SDK disk=$ADOPT_SDK)"; fi
+      if [[ "$CTX_APP"  != "$ADOPT_APP"  ]]; then MISMATCH_REASONS="$MISMATCH_REASONS app_project_path(ctx=$CTX_APP disk=$ADOPT_APP)"; fi
+      if [[ "$CTX_DEEP" != "$ADOPT_DEEP" ]]; then MISMATCH_REASONS="$MISMATCH_REASONS deep_ui_path(ctx=$CTX_DEEP disk=$ADOPT_DEEP)"; fi
+      if [[ "$CTX_CUI_RAW" != "$ADOPT_CUI" ]]; then
+        MISMATCH_REASONS="$MISMATCH_REASONS customui_src_path(ctx=${CTX_CUI_RAW:-null} disk=${ADOPT_CUI:-null})"
+      fi
+      if [[ -n "$MISMATCH_REASONS" ]]; then
+        err "SSOT mismatch between .seamos-context.json and on-disk layout — re-run with --force to trust disk:$MISMATCH_REASONS"
+        exit 65
+      fi
+      # 5 fields match disk exactly → no-op (idempotent)
+      log "[adopt] .seamos-context.json already matches disk — no write needed"
+      exit 0
+    fi
+    # --force path: emit a partial-context warning if applicable, then proceed
+    # to overwrite below.
+    CTX_FSP="$(jq -r '.last_project.fsp_path // ""' "$CTX_FILE" 2>/dev/null || echo "")"
+    CTX_SDK="$(jq -r '.last_project.sdk_project_path // ""' "$CTX_FILE" 2>/dev/null || echo "")"
+    CTX_APP="$(jq -r '.last_project.app_project_path // ""' "$CTX_FILE" 2>/dev/null || echo "")"
+    CTX_DEEP="$(jq -r '.last_project.deep_ui_path // ""' "$CTX_FILE" 2>/dev/null || echo "")"
+    CTX_CUI_KEY_PRESENT="$(jq -r 'if (.last_project | has("customui_src_path")) then "1" else "0" end' "$CTX_FILE" 2>/dev/null || echo "0")"
+    for v in CTX_FSP CTX_SDK CTX_APP CTX_DEEP; do
+      eval "if [[ \"\${$v}\" == \"null\" ]]; then $v=\"\"; fi"
+    done
+    if [[ -z "$CTX_FSP" || -z "$CTX_SDK" || -z "$CTX_APP" || -z "$CTX_DEEP" || "$CTX_CUI_KEY_PRESENT" != "1" ]]; then
+      warn "partial .seamos-context.json — re-inferring all 5 fields from disk (--force)"
+    fi
+  fi
+
+  # --- Step A3: build payload ----------------------------------------------
+  if [[ -n "$ADOPT_CUI" ]]; then
+    CUI_JSON_ARG=(--arg customui_src_path "$ADOPT_CUI")
+    CUI_JQ_EXPR='customui_src_path:$customui_src_path'
+  else
+    CUI_JSON_ARG=()
+    CUI_JQ_EXPR='customui_src_path:null'
+  fi
+
+  NORMALIZED_PAYLOAD="$(jq -n \
+    --arg name "$ADOPT_PROJECT" \
+    --arg workspace_path "$ADOPT_WORKSPACE" \
+    --arg layout_kind "$ADOPT_LAYOUT" \
+    --arg fsp_path "$ADOPT_FSP" \
+    --arg sdk_project_path "$ADOPT_SDK" \
+    --arg app_project_path "$ADOPT_APP" \
+    --arg deep_ui_path "$ADOPT_DEEP" \
+    "${CUI_JSON_ARG[@]}" \
+    "{name:\$name, workspace_path:\$workspace_path, layout_kind:\$layout_kind, fsp_path:\$fsp_path, sdk_project_path:\$sdk_project_path, app_project_path:\$app_project_path, deep_ui_path:\$deep_ui_path, $CUI_JQ_EXPR}")"
+
+  if [[ $DRY_RUN -eq 1 ]]; then
+    log "[dry-run] would write 5 normalized fields to $CTX_FILE:"
+    printf '%s\n' "$NORMALIZED_PAYLOAD"
+    exit 0
+  fi
+
+  # --- Step A4: atomic write -----------------------------------------------
+  # Merge into any existing top-level keys but replace last_project entirely
+  # with the new normalized payload.
+  TMP="${CTX_FILE}.tmp.$$"
+  if [[ -f "$CTX_FILE" ]]; then
+    jq --argjson p "$NORMALIZED_PAYLOAD" '.last_project = $p' "$CTX_FILE" > "$TMP"
+  else
+    jq -n --argjson p "$NORMALIZED_PAYLOAD" '{last_project:$p}' > "$TMP"
+  fi
+  mv "$TMP" "$CTX_FILE"
+  log "context 5필드를 기록했습니다 ($CTX_FILE)"
+
+  # --- Step A5: optional .gitignore (opt-in) -------------------------------
+  if [[ $UPDATE_GITIGNORE -eq 1 ]]; then
+    GI="$USER_ROOT/.gitignore"
+    if ! grep -qxF ".seamos-context.json" "$GI" 2>/dev/null; then
+      printf '\n# SeamOS workspace state\n.seamos-context.json\n' >> "$GI"
+      log "[write] $GI (.seamos-context.json appended)"
+    fi
+  fi
+
+  exit 0
+fi
 
 # ─── Endpoint resolution ───────────────────────────────────────────────────
 ENDPOINT_NAME="$ENDPOINT_INPUT"

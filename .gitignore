@@ -4,6 +4,10 @@
 .seamos-context.json.lock
 .seamos-context.json.lock.d/
 
+# Force-include fixture context files for tests
+!skills/shared-references/scripts/test/resolve-paths/fixtures/*/.seamos-context.json
+!skills/setup/scripts/test/adopt/fixtures/*/.seamos-context.json
+
 concept
 # Per-project gitignore is managed by create-project (Policy 1).
 # The root-level pattern below only prevents a stray seamos-assets/ from

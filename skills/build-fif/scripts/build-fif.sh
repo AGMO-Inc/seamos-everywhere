@@ -228,22 +228,16 @@ else
 fi
 FEATURE_NAME="$PROJECT_NAME"
 
-# ─── Resolve FD_APP_ROOT / FSP_PATH (v4 CCR-1, v2 I7) ──────────────────────
-# Context-preferred FD_APP_ROOT: if $USER_ROOT/.seamos-context.json has
-# .last_project.app_project_path, its grandparent is FD_APP_ROOT.
-# Otherwise fall back to convention: $USER_ROOT/$PROJECT_NAME/$PROJECT_NAME.
-FD_APP_ROOT=""
-if [[ -f "$USER_ROOT/.seamos-context.json" ]]; then
-  APP_PROJECT_PATH="$(jq -r '.last_project.app_project_path // empty' "$USER_ROOT/.seamos-context.json" 2>/dev/null || true)"
-  if [[ -n "$APP_PROJECT_PATH" ]]; then
-    FD_APP_ROOT="$(dirname "$(dirname "$APP_PROJECT_PATH")")/$PROJECT_NAME"
-    # The above yields <USER_ROOT>/<PROJECT>/<PROJECT> which is what we want
-    FD_APP_ROOT="$(dirname "$APP_PROJECT_PATH")"
-  fi
-fi
-if [[ -z "$FD_APP_ROOT" ]]; then
-  FD_APP_ROOT="$USER_ROOT/$PROJECT_NAME/$PROJECT_NAME"
-fi
+# ─── Resolve FD_APP_ROOT / FSP_PATH via shared resolve-paths helper ────────
+# v2 TODO 5: delegate layout/path resolution to shared helper. The helper
+# handles both Layout A (nested: <USER_ROOT>/<P>/<P>/...) and Layout B
+# (flat: <USER_ROOT>/...) uniformly via context-as-SSOT, falling back to
+# disk inference if context is missing. FD_APP_ROOT is the parent dir of
+# APP_PROJECT_PATH for both layouts.
+RESOLVE_HELPER="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)/shared-references/scripts/resolve-paths.sh"
+RESOLVE_OUT="$(bash "$RESOLVE_HELPER" "$USER_ROOT")" || exit $?
+eval "$RESOLVE_OUT"
+FD_APP_ROOT="$(dirname "$APP_PROJECT_PATH")"
 
 PROJ_ROOT="$FD_APP_ROOT"  # legacy alias used by the rest of the script
 FSP_PATH="$FD_APP_ROOT/com.bosch.fsp.$FEATURE_NAME"

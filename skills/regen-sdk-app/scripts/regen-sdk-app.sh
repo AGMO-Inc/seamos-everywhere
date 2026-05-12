@@ -119,6 +119,7 @@ done
 # ─── Resolve USER_ROOT + context ───────────────────────────────────────────
 USER_ROOT="$(find_user_root)"
 CONTEXT_FILE="$USER_ROOT/.seamos-context.json"
+RESOLVE_PATHS="$SCRIPT_DIR/../../shared-references/scripts/resolve-paths.sh"
 
 if [[ ! -f "$CONTEXT_FILE" ]]; then
   echo "ERROR: context file not found: $CONTEXT_FILE" >&2
@@ -193,11 +194,28 @@ case "$CODEGEN_TYPE" in
   *) echo "ERROR: --codegen-type must be JAVA or CPP (got: $CODEGEN_TYPE)" >&2; exit 64 ;;
 esac
 
-# ─── Derived paths ─────────────────────────────────────────────────────────
-FSP_PATH="$WORKSPACE/$PROJECT_NAME/com.bosch.fsp.$PROJECT_NAME"
-# Container-internal path written into config.prop. Bosch's UPDATE_SDK_APP
-# requires this path relative to FD_WORKSPACE (mounted as /workspace).
-APP_PROJECT_PATH_CONTAINER="/workspace/$PROJECT_NAME/${PROJECT_NAME}_${APP_PROJECT_NAME}"
+# ─── Derived paths (delegated to resolve-paths helper) ─────────────────────
+# Helper is layout-aware (nested vs flat) and SSOT for FSP_PATH,
+# APP_PROJECT_PATH_CONTAINER, FSP_PATH_CONTAINER, and MOUNT_ROOT — the four
+# values that previously hardcoded a nested-layout assumption.
+if [[ ! -x "$RESOLVE_PATHS" ]]; then
+  echo "ERROR: resolve-paths.sh not found or not executable at $RESOLVE_PATHS" >&2
+  exit 1
+fi
+RESOLVED="$(bash "$RESOLVE_PATHS" "$USER_ROOT")" || {
+  echo "ERROR: resolve-paths.sh failed for USER_ROOT=$USER_ROOT" >&2
+  exit 1
+}
+FSP_PATH="$(printf '%s\n' "$RESOLVED" | grep '^FSP_PATH=' | head -1 | cut -d= -f2-)"
+APP_PROJECT_PATH_CONTAINER="$(printf '%s\n' "$RESOLVED" | grep '^APP_PROJECT_PATH_CONTAINER=' | head -1 | cut -d= -f2-)"
+MOUNT_ROOT="$(printf '%s\n' "$RESOLVED" | grep '^MOUNT_ROOT=' | head -1 | cut -d= -f2-)"
+LAYOUT_KIND="$(printf '%s\n' "$RESOLVED" | grep '^LAYOUT_KIND=' | head -1 | cut -d= -f2-)"
+# Layout-B (flat) advisory guard — this skill is for plugin create-project
+# (nested) artifacts. seamos-IDE (flat) projects should regen inside the IDE.
+# WARN-only; do not abort. nested / unknown / unset → silent.
+if [[ "${LAYOUT_KIND:-}" == "flat" ]]; then
+  echo "[WARN] Layout B (flat) 감지 — 이 스킬은 plugin create-project (nested) 산출물 전용입니다. seamos-IDE 산출물에서는 동작이 보장되지 않을 수 있습니다. IDE 안에서 실행하는 것을 권장합니다." >&2
+fi
 CONFIG_PROP="$WORKSPACE/_config.prop"
 LOG="$WORKSPACE/run-sdk-app-update.log"
 
@@ -214,7 +232,7 @@ fi
 DOCKER_CMD=(
   "$TIMEOUT_BIN" 600
   docker run --rm --platform linux/amd64
-  -v "${WORKSPACE}:/workspace"
+  -v "${MOUNT_ROOT}:/workspace"
   -e FD_WORKSPACE=/workspace
   -e FD_OPERATION=UPDATE_SDK_APP
   -e FD_CONFIG_PROP=/workspace/_config.prop
@@ -227,6 +245,7 @@ if [[ $DRY_RUN -eq 1 ]]; then
   echo "[dry-run] PROJECT_NAME=$PROJECT_NAME"
   echo "[dry-run] APP_PROJECT_NAME=$APP_PROJECT_NAME"
   echo "[dry-run] WORKSPACE=$WORKSPACE"
+  echo "[dry-run] MOUNT_ROOT=$MOUNT_ROOT"
   echo "[dry-run] FSP_PATH=$FSP_PATH"
   echo "[dry-run] APP_PROJECT_PATH=$APP_PROJECT_PATH"
   echo "[dry-run] APP_PROJECT_PATH_CONTAINER=$APP_PROJECT_PATH_CONTAINER"
@@ -235,7 +254,7 @@ if [[ $DRY_RUN -eq 1 ]]; then
   echo "[dry-run] operation=UPDATE_SDK_APP codegen_type=$CODEGEN_TYPE image=$IMAGE_TAG"
   echo "[dry-run] reset_tests=$RESET_TESTS ack_deletes_tests=$ACK_DELETES_TESTS"
   if [[ $RESET_TESTS -eq 1 ]]; then
-    echo "[dry-run] would rm -rf: $WORKSPACE/$PROJECT_NAME/com.bosch.fsp.$PROJECT_NAME.gen.tests"
+    echo "[dry-run] would rm -rf: ${FSP_PATH}.gen.tests"
   fi
   echo "[dry-run] docker cmd: ${DOCKER_CMD[*]}"
   exit 0
@@ -297,7 +316,7 @@ ensure_image "$IMAGE_TAG" || exit 69
 # old SDKTest.java still hardcodes only the original providers (e.g. only
 # IMUProvider) and no GPS signals are published. Deleting .gen.tests/ before
 # UPDATE_SDK_APP forces FD to regenerate it from the current FSP/Manifest.
-GEN_TESTS_DIR="$WORKSPACE/$PROJECT_NAME/com.bosch.fsp.$PROJECT_NAME.gen.tests"
+GEN_TESTS_DIR="${FSP_PATH}.gen.tests"
 if [[ $RESET_TESTS -eq 1 ]]; then
   if [[ ! -d "$GEN_TESTS_DIR" ]]; then
     echo "[regen-sdk-app] --reset-tests: directory absent, nothing to delete: $GEN_TESTS_DIR" >&2

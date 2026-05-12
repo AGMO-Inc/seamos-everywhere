@@ -713,10 +713,29 @@ if [[ $RUN_STAGE_1B -eq 1 ]]; then
       --arg app_project_path "$APP_PROJECT_PATH" \
       --arg sdk_app_completed_at "$SDK_COMPLETED_AT" \
       '{operation:$operation, app_project_name:$app_project_name, codegen_type:$codegen_type, app_project_path:$app_project_path, sdk_app_completed_at:$sdk_app_completed_at}')
+
+    # Normalized 5-field path payload (TODO 3, plan v2)
+    case "$CODEGEN_TYPE" in
+      CPP)  SDK_SUFFIX="CPP_SDK" ;;
+      JAVA) SDK_SUFFIX="SDK" ;;
+      *)    SDK_SUFFIX="CPP_SDK" ;;
+    esac
+    FSP_PATH_NORM="${ABS_WS}/${PROJECT_NAME}/com.bosch.fsp.${PROJECT_NAME}"
+    SDK_PROJECT_PATH_NORM="${ABS_WS}/${PROJECT_NAME}/${PROJECT_NAME}_${SDK_SUFFIX}"
+    DEEP_UI_PATH_NORM="${APP_PROJECT_PATH}/ui"
+    NORMALIZED_PAYLOAD=$(jq -n \
+      --arg fsp_path "$FSP_PATH_NORM" \
+      --arg sdk_project_path "$SDK_PROJECT_PATH_NORM" \
+      --arg deep_ui_path "$DEEP_UI_PATH_NORM" \
+      --arg layout_kind "nested" \
+      '{fsp_path:$fsp_path, sdk_project_path:$sdk_project_path, deep_ui_path:$deep_ui_path, customui_src_path:null, layout_kind:$layout_kind}')
+
     (
       acquire_context_lock "$CONTEXT_FILE" || { echo "ERROR: failed to acquire context lock" >&2; exit 1; }
       TMP="${CONTEXT_FILE}.tmp.$$"
-      jq --argjson p "$SDK_PAYLOAD" 'if .last_project then (.last_project += $p) else (.last_project = $p) end' "$CONTEXT_FILE" > "$TMP"
+      jq --argjson p "$SDK_PAYLOAD" --argjson n "$NORMALIZED_PAYLOAD" \
+        'if .last_project then (.last_project += $p + $n) else (.last_project = ($p + $n)) end' \
+        "$CONTEXT_FILE" > "$TMP"
       mv "$TMP" "$CONTEXT_FILE"
     )
     echo "[create-project] SDK/APP SUCCESS — skeleton at: $APP_PROJECT_PATH" >&2

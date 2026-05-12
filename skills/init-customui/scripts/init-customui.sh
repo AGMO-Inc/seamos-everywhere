@@ -7,6 +7,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 SHARED_FIND_USER_ROOT="$SCRIPT_DIR/../../shared-references/scripts/find-user-root.sh"
+SHARED_RESOLVE_PATHS="$SCRIPT_DIR/../../shared-references/scripts/resolve-paths.sh"
 ASSET_DO_NOT_EDIT="$SKILL_DIR/assets/seamos-do-not-edit.md"
 ASSET_VANILLA_README="$SKILL_DIR/assets/vanilla-readme.md"
 
@@ -198,15 +199,42 @@ log "[project] $PROJECT"
 log "[app-project] $APP_PROJECT"
 log "[mode] current=$CURRENT_MODE target=$TARGET_MODE"
 
-# ─── Step 5 — Compute deep ui/ path ────────────────────────────────────────
-DEEP_UI=""
-if [[ -n "$CTX_APP_PROJECT_PATH" && -d "$CTX_APP_PROJECT_PATH" ]]; then
-  DEEP_UI="$CTX_APP_PROJECT_PATH/ui"
-else
-  DEEP_UI="$USER_ROOT/$PROJECT/$PROJECT/$APP_PROJECT/ui"
+# ─── Step 5 — Resolve paths via shared helper ─────────────────────────────
+# Delegate all path resolution (deep ui, customui src, workspace, layout) to
+# the shared `resolve-paths.sh` so init-customui never reasons about layout
+# itself. Helper emits KEY=VALUE lines on stdout; we eval them into locals.
+if [[ ! -f "$SHARED_RESOLVE_PATHS" ]]; then
+  err "STATUS_ERR: shared lib not found: $SHARED_RESOLVE_PATHS"
+  log "STATUS_ERR: resolve-paths.sh missing"
+  exit 64
 fi
 
-if [[ ! -d "$DEEP_UI" ]]; then
+LAYOUT_KIND=""
+WORKSPACE_PATH=""
+DEEP_UI_PATH=""
+CUSTOMUI_SRC_PATH=""
+
+set +e
+RESOLVE_OUT="$(bash "$SHARED_RESOLVE_PATHS" "$USER_ROOT" 2>&1 >/dev/null)"
+RESOLVE_KV="$(bash "$SHARED_RESOLVE_PATHS" "$USER_ROOT" 2>/dev/null)"
+resolve_rc=$?
+set -e
+if [[ $resolve_rc -ne 0 ]]; then
+  err "STATUS_ERR: resolve-paths.sh failed (rc=$resolve_rc): $RESOLVE_OUT"
+  log "STATUS_ERR: resolve-paths.sh failed"
+  exit 64
+fi
+while IFS='=' read -r _k _v; do
+  case "$_k" in
+    LAYOUT_KIND)        LAYOUT_KIND="$_v" ;;
+    WORKSPACE_PATH)     WORKSPACE_PATH="$_v" ;;
+    DEEP_UI_PATH)       DEEP_UI_PATH="$_v" ;;
+    CUSTOMUI_SRC_PATH)  CUSTOMUI_SRC_PATH="$_v" ;;
+  esac
+done <<< "$RESOLVE_KV"
+
+DEEP_UI="$DEEP_UI_PATH"
+if [[ -z "$DEEP_UI" || ! -d "$DEEP_UI" ]]; then
   err "STATUS_ERR: deep ui/ not found at $DEEP_UI — run 'create-project' first"
   log "STATUS_ERR: deep ui/ not found at $DEEP_UI — run 'create-project' first"
   exit 64
@@ -214,6 +242,7 @@ fi
 # Normalize to absolute realpath so it shares prefix with USER_ROOT (macOS /tmp ↔ /private/tmp).
 DEEP_UI="$( cd "$DEEP_UI" && pwd -P )"
 log "[deep-ui] $DEEP_UI"
+log "[layout] $LAYOUT_KIND"
 
 # Helper: USER_ROOT-relative path (portable across macOS/Linux).
 relpath_from_user_root() {
@@ -228,7 +257,15 @@ relpath_between() {
 }
 
 DEEP_UI_REL_USER_ROOT="$(relpath_from_user_root "$DEEP_UI")"
-CUSTOMUI_SRC="$USER_ROOT/$PROJECT/customui-src"
+# CustomUI src lives at the Eclipse-workspace level for both layouts
+# (helper-defined WORKSPACE_PATH). In vanilla mode the helper returns the
+# literal string "null" for CUSTOMUI_SRC_PATH; we still need a known location
+# to drop / clone customui-src/ if/when react mode is invoked.
+if [[ -n "$CUSTOMUI_SRC_PATH" && "$CUSTOMUI_SRC_PATH" != "null" ]]; then
+  CUSTOMUI_SRC="$CUSTOMUI_SRC_PATH"
+else
+  CUSTOMUI_SRC="$WORKSPACE_PATH/customui-src"
+fi
 
 # ─── Step 6 — Determine transition ─────────────────────────────────────────
 # CURRENT_MODE: "null" / "vanilla" / "react"
@@ -276,21 +313,106 @@ fi
 # Timestamp for backups (UTC ISO 8601 with colons removed).
 UTC_ISO_NO_COLONS="$(date -u +%Y-%m-%dT%H%MZ)"
 
-# Helper: update workspace JSON ui fields.
-update_workspace_ui() {
+# Helper: update workspace JSON ui fields AND context JSON customui_src_path
+# in a single transaction. Either both files are updated, or neither is —
+# never one without the other. Pattern: jq → both tmp files → pre-flight
+# writability check → mv #1 → mv #2 (with mv #1 rollback on mv #2 failure).
+#
+# Args:
+#   $1 fw       — "vanilla" or "react"
+#   $2 active   — workspace.ui.activeSrcPath value (USER_ROOT-relative)
+#   $3 ctx_cui  — context.last_project.customui_src_path value:
+#                 absolute path for react, or the literal "null" to set JSON null
+update_ssot_pair() {
   local fw="$1"
   local active="$2"
+  local ctx_cui="$3"
   if [[ $DRY_RUN -eq 1 ]]; then
     log "[dry-run] would update workspace JSON ui.defaultFramework=${fw}, ui.activeSrcPath=${active}"
+    log "[dry-run] would update context JSON last_project.customui_src_path=${ctx_cui}"
     return 0
   fi
-  local tmp
-  tmp="$(mktemp)"
-  jq --arg fw "$fw" --arg path "$active" \
-    '.ui.defaultFramework=$fw | .ui.activeSrcPath=$path' \
-    "$WORKSPACE_JSON" > "$tmp"
-  mv "$tmp" "$WORKSPACE_JSON"
+
+  # Pre-flight: workspace JSON must exist and be writable (read-only chmod must
+  # abort BEFORE any mv so both files keep their mtime).
+  if [[ ! -w "$WORKSPACE_JSON" ]]; then
+    err "STATUS_ERR: $WORKSPACE_JSON not writable — SSOT pair update aborted (both files unchanged)"
+    log "STATUS_ERR: workspace JSON not writable"
+    exit 73
+  fi
+  # Context JSON is optional from create-project, but if present must be writable.
+  if [[ -f "$CONTEXT_JSON" && ! -w "$CONTEXT_JSON" ]]; then
+    err "STATUS_ERR: $CONTEXT_JSON not writable — SSOT pair update aborted (both files unchanged)"
+    log "STATUS_ERR: context JSON not writable"
+    exit 73
+  fi
+
+  local tmp_ws tmp_ctx
+  tmp_ws="$(mktemp)"
+  if ! jq --arg fw "$fw" --arg path "$active" \
+       '.ui.defaultFramework=$fw | .ui.activeSrcPath=$path' \
+       "$WORKSPACE_JSON" > "$tmp_ws"; then
+    rm -f "$tmp_ws"
+    err "STATUS_ERR: jq failed on $WORKSPACE_JSON — SSOT pair update aborted"
+    log "STATUS_ERR: workspace JSON jq failed"
+    exit 65
+  fi
+
+  # Build context tmp only if context JSON exists; otherwise skip context write.
+  local have_ctx=0
+  if [[ -f "$CONTEXT_JSON" ]]; then
+    tmp_ctx="$(mktemp)"
+    have_ctx=1
+    if [[ "$ctx_cui" == "null" ]]; then
+      if ! jq '.last_project.customui_src_path = null' \
+           "$CONTEXT_JSON" > "$tmp_ctx"; then
+        rm -f "$tmp_ws" "$tmp_ctx"
+        err "STATUS_ERR: jq failed on $CONTEXT_JSON — SSOT pair update aborted"
+        log "STATUS_ERR: context JSON jq failed"
+        exit 65
+      fi
+    else
+      if ! jq --arg p "$ctx_cui" \
+           '.last_project.customui_src_path = $p' \
+           "$CONTEXT_JSON" > "$tmp_ctx"; then
+        rm -f "$tmp_ws" "$tmp_ctx"
+        err "STATUS_ERR: jq failed on $CONTEXT_JSON — SSOT pair update aborted"
+        log "STATUS_ERR: context JSON jq failed"
+        exit 65
+      fi
+    fi
+  fi
+
+  # Commit phase. Workspace first; on workspace mv failure neither file is
+  # touched. On context mv failure (rare), roll workspace back from a snapshot.
+  local ws_snapshot=""
+  ws_snapshot="$(mktemp)"
+  cp "$WORKSPACE_JSON" "$ws_snapshot"
+
+  if ! mv "$tmp_ws" "$WORKSPACE_JSON"; then
+    rm -f "$tmp_ws" "$ws_snapshot"
+    [[ $have_ctx -eq 1 ]] && rm -f "$tmp_ctx"
+    err "STATUS_ERR: mv to $WORKSPACE_JSON failed — SSOT pair update aborted (both files unchanged)"
+    log "STATUS_ERR: workspace JSON mv failed"
+    exit 73
+  fi
+
+  if [[ $have_ctx -eq 1 ]]; then
+    if ! mv "$tmp_ctx" "$CONTEXT_JSON"; then
+      # Rollback workspace from snapshot so the invariant holds.
+      cp "$ws_snapshot" "$WORKSPACE_JSON" || true
+      rm -f "$tmp_ctx" "$ws_snapshot"
+      err "STATUS_ERR: mv to $CONTEXT_JSON failed — workspace rolled back (both files unchanged)"
+      log "STATUS_ERR: context JSON mv failed (workspace rolled back)"
+      exit 73
+    fi
+  fi
+
+  rm -f "$ws_snapshot"
   log "[write] $WORKSPACE_JSON (ui.defaultFramework=${fw}, ui.activeSrcPath=${active})"
+  if [[ $have_ctx -eq 1 ]]; then
+    log "[write] $CONTEXT_JSON (last_project.customui_src_path=${ctx_cui})"
+  fi
 }
 
 # Helper: backup deep ui/ → ui.bak.{ts}/
@@ -417,14 +539,23 @@ do_vanilla() {
     log "[skip] deep ui/ already has user content — README not dropped"
   fi
 
-  # Update workspace JSON.
-  local current_active
+  # Update workspace + context JSON (single SSOT transaction).
+  # vanilla → activeSrcPath = deep ui (USER_ROOT-relative);
+  #           context.customui_src_path = null (no react source tree).
+  local current_active current_cui
   current_active="$(jq -r '.ui.activeSrcPath // empty' "$WORKSPACE_JSON")"
-  if [[ "$CURRENT_MODE" == "vanilla" && "$current_active" == "$DEEP_UI_REL_USER_ROOT" ]]; then
+  current_cui="null"
+  if [[ -f "$CONTEXT_JSON" ]]; then
+    current_cui="$(jq -r '.last_project.customui_src_path // "null"' "$CONTEXT_JSON")"
+  fi
+  if [[ "$CURRENT_MODE" == "vanilla" \
+        && "$current_active" == "$DEEP_UI_REL_USER_ROOT" \
+        && "$current_cui" == "null" ]]; then
     log "[skip] vanilla mode already configured"
     log "[skip] activeSrcPath already set"
+    log "[skip] context customui_src_path already null"
   else
-    update_workspace_ui "vanilla" "$DEEP_UI_REL_USER_ROOT"
+    update_ssot_pair "vanilla" "$DEEP_UI_REL_USER_ROOT" "null"
   fi
 }
 
@@ -546,15 +677,25 @@ do_react() {
   # .gitignore sentinel.
   append_gitignore_sentinel
 
-  # Update workspace JSON.
-  local active_path="$PROJECT/customui-src"
-  local current_active
+  # Update workspace + context JSON (single SSOT transaction).
+  # react → activeSrcPath = customui-src dir (USER_ROOT-relative, layout-aware
+  #         via helper's WORKSPACE_PATH); context.customui_src_path = absolute.
+  local active_path
+  active_path="$(relpath_from_user_root "$CUSTOMUI_SRC")"
+  local current_active current_cui
   current_active="$(jq -r '.ui.activeSrcPath // empty' "$WORKSPACE_JSON")"
-  if [[ "$CURRENT_MODE" == "react" && "$current_active" == "$active_path" ]]; then
+  current_cui=""
+  if [[ -f "$CONTEXT_JSON" ]]; then
+    current_cui="$(jq -r '.last_project.customui_src_path // ""' "$CONTEXT_JSON")"
+  fi
+  if [[ "$CURRENT_MODE" == "react" \
+        && "$current_active" == "$active_path" \
+        && "$current_cui" == "$CUSTOMUI_SRC" ]]; then
     log "[skip] react mode already configured"
     log "[skip] activeSrcPath already set"
+    log "[skip] context customui_src_path already set"
   else
-    update_workspace_ui "react" "$active_path"
+    update_ssot_pair "react" "$active_path" "$CUSTOMUI_SRC"
   fi
 }
 

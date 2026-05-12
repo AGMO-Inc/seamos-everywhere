@@ -111,14 +111,43 @@ USER_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 # is the project root that contains com.bosch.fsp.<APP>, <APP>_CPP_SDK, etc.
 # Search candidates in priority order:
 #   1. caller-supplied APP_PROJECT_ROOT (env or CLI)
-#   2. plugin tree:           ${USER_ROOT}/${APP_NAME}/${APP_NAME}
-#   3. current working dir:   ${PWD}/${APP_NAME}/${APP_NAME}, ${PWD}/${APP_NAME}, ${PWD}
-#   4. SEAMOS_WORKSPACE env:  ${SEAMOS_WORKSPACE}/${APP_NAME}/${APP_NAME}
+#   2. plugin tree (nested):    ${USER_ROOT}/${APP_NAME}/${APP_NAME}
+#   3. plugin tree (flat):      ${USER_ROOT}                  — FD project root
+#                               ${USER_ROOT}/${APP_NAME}_${APP_NAME}  — app code dir
+#   4. current working dir:     ${PWD}/${APP_NAME}/${APP_NAME}, ${PWD}/${APP_NAME}, ${PWD}
+#   5. SEAMOS_WORKSPACE env:    ${SEAMOS_WORKSPACE}/${APP_NAME}/${APP_NAME}
 # A candidate is accepted only if it actually looks like an FD project
 # (has com.bosch.fsp.<APP_NAME> alongside).
+#
+# Before walking CANDIDATES, defer to resolve-paths.sh helper which reads
+# .seamos-context.json (5-field normalized) — it knows the exact layout
+# (nested vs flat) and emits FSP_PATH whose dirname is the FD project root.
+AUTO_LAYOUT=""
+if [ -z "${APP_PROJECT_ROOT}" ]; then
+  RESOLVE_HELPER="$(cd "${SCRIPT_DIR}/../../shared-references/scripts" 2>/dev/null && pwd)/resolve-paths.sh"
+  if [ -f "${RESOLVE_HELPER}" ]; then
+    HELPER_OUT="$(bash "${RESOLVE_HELPER}" "${USER_ROOT}" 2>/dev/null || true)"
+    if [ -n "${HELPER_OUT}" ]; then
+      eval "$(printf '%s\n' "${HELPER_OUT}" | grep -E '^(FSP_PATH|LAYOUT_KIND)=' | sed 's/^/CTX_/')"
+      if [ -n "${CTX_FSP_PATH:-}" ] && [ -d "${CTX_FSP_PATH}" ]; then
+        APP_PROJECT_ROOT="$(dirname "${CTX_FSP_PATH}")"
+        AUTO_LAYOUT="${CTX_LAYOUT_KIND:-unknown}"
+        log "auto-resolved (${AUTO_LAYOUT}) APP_PROJECT_ROOT=${APP_PROJECT_ROOT}"
+      fi
+    fi
+  fi
+fi
+# Layout-B (flat) advisory guard — this skill is for plugin create-project
+# (nested) artifacts. seamos-IDE (flat) projects should run inside the IDE.
+# WARN-only; do not abort. nested / unknown / unset → silent.
+if [ "${CTX_LAYOUT_KIND:-}" = "flat" ]; then
+  echo "[WARN] Layout B (flat) 감지 — 이 스킬은 plugin create-project (nested) 산출물 전용입니다. seamos-IDE 산출물에서는 동작이 보장되지 않을 수 있습니다. IDE 안에서 실행하는 것을 권장합니다." >&2
+fi
 if [ -z "${APP_PROJECT_ROOT}" ]; then
   CANDIDATES=(
     "${USER_ROOT}/${APP_NAME}/${APP_NAME}"
+    "${USER_ROOT}"
+    "${USER_ROOT}/${APP_NAME}_${APP_NAME}"
     "${PWD}/${APP_NAME}/${APP_NAME}"
     "${PWD}/${APP_NAME}"
     "${PWD}"
@@ -129,7 +158,13 @@ if [ -z "${APP_PROJECT_ROOT}" ]; then
   for cand in "${CANDIDATES[@]}"; do
     if [ -d "${cand}/com.bosch.fsp.${APP_NAME}" ]; then
       APP_PROJECT_ROOT="${cand}"
-      log "auto-resolved APP_PROJECT_ROOT=${APP_PROJECT_ROOT}"
+      # Infer layout from the resolved candidate for the auto-resolution log.
+      case "${cand}" in
+        "${USER_ROOT}/${APP_NAME}/${APP_NAME}") AUTO_LAYOUT="nested" ;;
+        "${USER_ROOT}")                         AUTO_LAYOUT="flat" ;;
+        *)                                      AUTO_LAYOUT="unknown" ;;
+      esac
+      log "auto-resolved (${AUTO_LAYOUT}) APP_PROJECT_ROOT=${APP_PROJECT_ROOT}"
       break
     fi
   done

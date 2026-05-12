@@ -27,8 +27,9 @@ Re-runs FD Headless in **UPDATE_SDK_APP** mode against an existing workspace. Bo
 
 ## Prerequisites
 
+0. **Plugin `create-project` (nested) 산출물 전용** — 이 스킬은 plugin `create-project` 로 생성한 nested 레이아웃 프로젝트에서만 동작이 보장됩니다. seamos-IDE 로 만든 flat 레이아웃 프로젝트는 **IDE 안에서 SDK 재생성을 수행하는 것을 권장**합니다. flat 레이아웃에서 호출 시 stderr 에 `[WARN] Layout B (flat) 감지` 라인을 출력하고 그대로 진행하지만, 동작이 보장되지 않을 수 있습니다.
 1. **USER_ROOT**: a directory containing `.mcp.json` (discovered by upward traversal from `$PWD`).
-2. **Context populated**: `$USER_ROOT/.seamos-context.json` must have `last_project.{name, workspace_path, app_project_name, codegen_type, app_project_path, sdk_app_completed_at}`. This means `create-project` (including Stage 1B) was already executed successfully. If context is missing or stale, tell the user to run `create-project` first.
+2. **Context populated**: `$USER_ROOT/.seamos-context.json` must have `last_project.{name, workspace_path, app_project_name, codegen_type, app_project_path, layout_kind, fsp_path, sdk_app_completed_at}`. This means `create-project` (including Stage 1B) was already executed successfully — both `nested` (plugin-created) and `flat` (seamos-IDE) layouts are supported, with `layout_kind` selecting the correct container-internal paths and mount root via the shared `resolve-paths.sh` helper. If context is missing or stale, tell the user to run `create-project` first.
 3. **FSP current**: Whatever is in `<workspace>/<PROJECT>/com.bosch.fsp.<PROJECT>/` is taken as truth. This skill will NOT touch the FSP or re-validate interface JSON. If the user's reason for regen is "I changed interface.json", route them to `create-project --regen-fsp-only` first — that re-runs `GENERATE_FSP` against the new interface JSON without touching the app project (so this skill can then merge the refreshed SDK into the preserved user code).
 4. **Docker**: running with the default image `seamos-fd-headless:latest` (or local build / `--image-tag` override).
 
@@ -56,8 +57,13 @@ Read from context; CLI flags override. Required fields and resolution order:
 | `MVN_ARGS` | `--mvn-args` | `last_project.mvn_args` | `""` |
 | `APP_PROJECT_PATH` | `--app-project-path` (host path) | `last_project.app_project_path` | error exit 64 |
 | `WORKSPACE` | — | `last_project.workspace_path` | error exit 64 |
+| `FSP_PATH` | — | resolved via `resolve-paths.sh` (uses `last_project.fsp_path` / `layout_kind`) | error exit 64 |
+| `APP_PROJECT_PATH_CONTAINER` | — | resolved via `resolve-paths.sh` (layout-aware) | — |
+| `MOUNT_ROOT` | — | resolved via `resolve-paths.sh` (nested → `WORKSPACE`, flat → `USER_ROOT`) | — |
 
 **Why `APP_PROJECT_PATH` is required without a fallback**: Bosch's UPDATE_SDK_APP needs to know where the existing app project lives. Unlike GENERATE, it cannot infer — the path may have been renamed, and it is the sole difference vs. GENERATE in the config.prop schema (PDF §4).
+
+**Why `FSP_PATH`, `APP_PROJECT_PATH_CONTAINER`, and `MOUNT_ROOT` come from the helper**: the historical script hard-coded the nested layout (`$WORKSPACE/$PROJECT/com.bosch.fsp.$PROJECT`, `/workspace/$PROJECT/${PROJECT}_${APP}`, `-v ${WORKSPACE}:/workspace`). That assumption breaks on the flat seamos-IDE layout (where the FSP lives directly under `USER_ROOT` and the app project is a sibling, not a child). `resolve-paths.sh` derives all three from `layout_kind` so both layouts work without each call-site re-implementing the branch. For the flat layout, the mount root climbs one level to `USER_ROOT` so sibling directories (`<P>_App`, `<P>_CPP_SDK`, `com.bosch.fsp.<P>`) are all visible to the container.
 
 ### Step 3: Write config.prop
 
@@ -70,11 +76,11 @@ bash ../create-project/scripts/build-config-prop.sh \
   --codegen-type      "$CODEGEN_TYPE" \
   --process-timer     "$PROCESS_TIMER" \
   --mvn-args          "$MVN_ARGS" \
-  --app-project-path  "/workspace/$PROJECT_NAME/${PROJECT_NAME}_${APP_PROJECT_NAME}" \
+  --app-project-path  "$APP_PROJECT_PATH_CONTAINER" \
   --output            "$WORKSPACE/_config.prop"
 ```
 
-The `--app-project-path` flag (optional on the helper) is what flips config.prop from GENERATE format to UPDATE format by adding the `app.project.path=...` line. Always pass the **container-internal** path (`/workspace/...`) — the `-v` mount handles the host mapping.
+The `--app-project-path` flag (optional on the helper) is what flips config.prop from GENERATE format to UPDATE format by adding the `app.project.path=...` line. Always pass the **container-internal** path (`/workspace/...`) — the `-v` mount handles the host mapping. `APP_PROJECT_PATH_CONTAINER` is derived by `resolve-paths.sh` from `layout_kind` (nested → `/workspace/$PROJECT/${PROJECT}_${APP}`, flat → `/workspace/${PROJECT}_${APP}`).
 
 ### Step 4: docker run UPDATE_SDK_APP
 
@@ -82,12 +88,14 @@ Same pattern as Stage 1B, but with `FD_OPERATION=UPDATE_SDK_APP`:
 
 ```bash
 timeout 600 docker run --rm --platform linux/amd64 \
-  -v "$WORKSPACE:/workspace" \
+  -v "$MOUNT_ROOT:/workspace" \
   -e FD_WORKSPACE=/workspace \
   -e FD_OPERATION=UPDATE_SDK_APP \
   -e FD_CONFIG_PROP=/workspace/_config.prop \
   "$IMAGE_TAG" 2>&1 | tee "$WORKSPACE/run-sdk-app-update.log"
 ```
+
+`MOUNT_ROOT` is layout-aware (see Step 2). For nested layouts it equals `WORKSPACE`; for flat layouts it climbs one level to `USER_ROOT` so the FSP, SDK, and app projects (all siblings under `USER_ROOT`) are visible to the container as `/workspace/<dir>`.
 
 The entrypoint (`docker/fd-headless/entrypoint.sh`) already branches `GENERATE_SDK_APP|UPDATE_SDK_APP` together, so no image changes are required.
 
@@ -118,6 +126,7 @@ No docker invocation, no disk mutation. Emit these path variables to stdout (mir
 [dry-run] USER_ROOT=...
 [dry-run] PROJECT_NAME=...
 [dry-run] WORKSPACE=...
+[dry-run] MOUNT_ROOT=...                  # -v <MOUNT_ROOT>:/workspace (layout-aware)
 [dry-run] FSP_PATH=...
 [dry-run] APP_PROJECT_PATH=...            # host path
 [dry-run] APP_PROJECT_PATH_CONTAINER=...  # /workspace/... path written into config.prop

@@ -314,20 +314,36 @@ cmd_apply() {
   # Post-regen sanity: FD's UPDATE_SDK_APP returns success even when it
   # silently skips the SDK merge because the app project lacks customui/.
   # That happens with a fresh CPP project that has no user UI code yet, and
-  # leaves stale provider files under <APP>_CPP_SDK/src-gen/nevonex/. The
+  # leaves stale provider files under <SDK_PROJECT_PATH>/src-gen/nevonex/. The
   # SEVERE log line is the only signal.
-  local sdk_log
-  sdk_log="$(jq -r '.last_project.workspace_path // empty' "$user_root/.seamos-context.json" 2>/dev/null)/run-sdk-app-update.log"
-  if [[ -f "$sdk_log" ]] && grep -q 'SEVERE: App project does not contain the custom ui folder' "$sdk_log"; then
+  #
+  # Layout-aware path resolution: delegate to shared resolve-paths.sh so both
+  # Layout A (nested: <USER_ROOT>/<P>/<P>/...) and Layout B (flat:
+  # <USER_ROOT>/...) emit accurate absolute paths for sdk_log and the guidance
+  # message.
+  local RESOLVE_HELPER="$SKILLS_DIR/shared-references/scripts/resolve-paths.sh"
+  local APP_PROJECT_PATH="" SDK_PROJECT_PATH=""
+  if [[ -f "$RESOLVE_HELPER" ]]; then
+    local RESOLVE_OUT
+    if RESOLVE_OUT="$(bash "$RESOLVE_HELPER" "$user_root" 2>/dev/null)"; then
+      eval "$RESOLVE_OUT"
+    fi
+  fi
+  local sdk_log=""
+  if [[ -n "$APP_PROJECT_PATH" ]]; then
+    sdk_log="$(dirname "$APP_PROJECT_PATH")/run-sdk-app-update.log"
+  fi
+  if [[ -n "$sdk_log" && -f "$sdk_log" ]] && grep -q 'SEVERE: App project does not contain the custom ui folder' "$sdk_log"; then
+    local stale_dir="${SDK_PROJECT_PATH}/src-gen/nevonex/"
     echo
     echo "WARNING: UPDATE_SDK_APP succeeded but FD reported no customui/ folder under" >&2
     echo "         the app project. The SDK merge was a NO-OP — stale provider files" >&2
-    echo "         under <APP>_CPP_SDK/src-gen/nevonex/ may still reference removed" >&2
+    echo "         under ${stale_dir} may still reference removed" >&2
     echo "         plugins, which can break the build." >&2
     echo "         If this project hasn't had any user UI code yet, the safe path is" >&2
     echo "         to start over with create-project (loses no real user code yet)." >&2
     echo "         If user code already exists, manually clean stale src-gen subdirs" >&2
-    echo "         that match removed plugin names." >&2
+    echo "         under ${stale_dir} that match removed plugin names." >&2
   fi
 
   echo

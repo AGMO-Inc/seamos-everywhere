@@ -175,9 +175,32 @@ done
 
 # ─── Host-side variable derivation (plan-exact) ────────────────────────────
 # SCRIPT_DIR was already computed at the top for --diagnose dispatch; reuse it.
-USER_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"    # 플러그인 루트
+USER_ROOT="${RUNAPP_USER_ROOT:-$(cd "${SCRIPT_DIR}/../../.." && pwd)}"    # 플러그인 루트 (RUNAPP_USER_ROOT env 로 override 가능 — E2E fixture / 외부 프로젝트 케이스)
 APP_NAME="${APP_NAME:?APP_NAME required}"
 APP_NAME_LOWER="$(echo "$APP_NAME" | tr '[:upper:]' '[:lower:]')"
+# APP_PROJECT_ROOT resolution — env > context (helper) > nested fallback.
+# helper exports FSP_PATH (and friends) from .seamos-context.json or disk
+# inference. APP_PROJECT_ROOT = dirname(FSP_PATH) holds for both layouts:
+#   nested → ${USER_ROOT}/${P}/${P}        (FSP at ${USER_ROOT}/${P}/${P}/com.bosch.fsp.${P})
+#   flat   → ${USER_ROOT}                  (FSP at ${USER_ROOT}/com.bosch.fsp.${P})
+if [ -z "${APP_PROJECT_ROOT:-}" ]; then
+  RESOLVE_HELPER="${SCRIPT_DIR}/../../shared-references/scripts/resolve-paths.sh"
+  if [ -x "${RESOLVE_HELPER}" ] || [ -f "${RESOLVE_HELPER}" ]; then
+    HELPER_OUT="$(bash "${RESOLVE_HELPER}" "${USER_ROOT}" 2>/dev/null || true)"
+    if [ -n "${HELPER_OUT}" ]; then
+      eval "$(printf '%s\n' "${HELPER_OUT}" | grep -E '^(FSP_PATH|APP_PROJECT_PATH|LAYOUT_KIND|WORKSPACE_PATH)=' | sed 's/^/CTX_/')"
+      if [ -n "${CTX_FSP_PATH:-}" ]; then
+        APP_PROJECT_ROOT="$(dirname "${CTX_FSP_PATH}")"
+      fi
+    fi
+  fi
+fi
+# Layout-B (flat) advisory guard — this skill is for plugin create-project
+# (nested) artifacts. seamos-IDE (flat) projects should run inside the IDE.
+# WARN-only; do not abort. nested / unknown / unset → silent.
+if [ "${CTX_LAYOUT_KIND:-}" = "flat" ]; then
+  echo "[WARN] Layout B (flat) 감지 — 이 스킬은 plugin create-project (nested) 산출물 전용입니다. seamos-IDE 산출물에서는 동작이 보장되지 않을 수 있습니다. IDE 안에서 실행하는 것을 권장합니다." >&2
+fi
 APP_PROJECT_ROOT="${APP_PROJECT_ROOT:-${USER_ROOT}/${APP_NAME}/${APP_NAME}}"
 CONTAINER_NAME="seamos-run-app-${APP_NAME_LOWER}"
 APP_PORT="${APP_PORT:-6563}"
@@ -210,6 +233,9 @@ log "NVX_DOCKER_IMAGE=${NVX_DOCKER_IMAGE}"
 log "PLATFORM_ARGS=${PLATFORM_ARGS[*]}"
 
 # ─── APP_PROJECT_ROOT existence check ──────────────────────────────────────
+# Helper-resolved APP_PROJECT_ROOT (via dirname of CTX_FSP_PATH) is always an
+# existing directory; explicit env or nested-fallback paths may not be, so we
+# still enforce the check here as the single failure point for layout misses.
 if [ ! -d "${APP_PROJECT_ROOT}" ]; then
   err "APP_PROJECT_ROOT not found: ${APP_PROJECT_ROOT}"
   err "Run the create-project skill first to scaffold '${APP_NAME}'."
@@ -217,7 +243,14 @@ if [ ! -d "${APP_PROJECT_ROOT}" ]; then
 fi
 
 # ─── JAVA block (CPP MVP only) ─────────────────────────────────────────────
-FSP_PATH="${APP_PROJECT_ROOT}/com.bosch.fsp.${APP_NAME}"
+# Prefer helper-resolved FSP_PATH (set as CTX_FSP_PATH above when no
+# APP_PROJECT_ROOT env was supplied); fall back to the layout-A synthesis
+# rooted at APP_PROJECT_ROOT for explicit-env / legacy callers.
+if [ -n "${CTX_FSP_PATH:-}" ] && [ -d "${CTX_FSP_PATH}" ]; then
+  FSP_PATH="${CTX_FSP_PATH}"
+else
+  FSP_PATH="${APP_PROJECT_ROOT}/com.bosch.fsp.${APP_NAME}"
+fi
 if [ -f "${FSP_PATH}/FDProject.props" ] && \
    grep -q "^JAVA_APP_PATH=" "${FSP_PATH}/FDProject.props"; then
   APP_TYPE="java"

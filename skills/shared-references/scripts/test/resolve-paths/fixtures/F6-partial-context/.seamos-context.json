@@ -1,0 +1,8 @@
+{
+  "last_project": {
+    "name": "foo",
+    "workspace_path": "__USER_ROOT__",
+    "fsp_path": "__USER_ROOT__/com.bosch.fsp.foo",
+    "app_project_path": "__USER_ROOT__/foo_App"
+  }
+}

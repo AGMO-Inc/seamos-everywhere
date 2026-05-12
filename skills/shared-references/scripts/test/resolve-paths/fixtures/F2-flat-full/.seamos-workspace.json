@@ -1,0 +1,6 @@
+{
+  "ui": {
+    "defaultFramework": "vanilla",
+    "activeSrcPath": "customui-src"
+  }
+}

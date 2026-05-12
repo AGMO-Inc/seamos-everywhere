@@ -1,0 +1,12 @@
+{
+  "last_project": {
+    "name": "foo",
+    "workspace_path": "__USER_ROOT__/foo",
+    "layout_kind": "nested",
+    "fsp_path": "__USER_ROOT__/foo/foo/com.bosch.fsp.foo",
+    "sdk_project_path": "__USER_ROOT__/foo/foo/foo_CPP_SDK",
+    "app_project_path": "__USER_ROOT__/foo/foo/foo_App",
+    "customui_src_path": "__USER_ROOT__/foo/customui-src",
+    "deep_ui_path": "__USER_ROOT__/foo/foo/foo_App/ui"
+  }
+}

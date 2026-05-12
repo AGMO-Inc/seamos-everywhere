@@ -142,6 +142,33 @@ Example for `manage-device-app`:
 | `sdk_app_completed_at` | Stage 1B success | SDK/APP **first** completion timestamp (resume discriminator; preserved across re-runs) |
 | `sdk_app_updated_at` | `regen-sdk-app` success (UPDATE_SDK_APP) | Last UPDATE_SDK_APP run — refreshed each time skeleton is merged |
 | `app_project_name`, `codegen_type`, `app_project_path` | Stage 1B success | Maven / CMake target resolution (read by `regen-sdk-app` and `build-fif`) |
+| `fsp_path` | `create-project` Stage 1B success / `setup --adopt` success | v2 정규화 — FSP 디렉토리 절대경로 |
+| `sdk_project_path` | `create-project` Stage 1B success / `setup --adopt` success | v2 정규화 — SDK 디렉토리 절대경로 |
+| `customui_src_path` | `init-customui` mode 결정 시점 (react 모드만; vanilla 면 null) | v2 정규화 — react customui-src 절대경로 |
+| `deep_ui_path` | `create-project` Stage 1B success / `setup --adopt` success | v2 정규화 — 앱 프로젝트 deep `ui/` 절대경로 (배포 산출물 위치) |
+
+### Normalized path fields (v2 — frozen contract)
+
+다음 5필드는 두 레이아웃(flat / nested) 호환성의 SSOT 다. helper, create-project, init-customui, setup --adopt 가 모두 이 표를 참조한다.
+
+| 키 | 타입 | 필수 | 의미 |
+|---|---|---|---|
+| `fsp_path` | string (절대경로) | ✓ | `com.bosch.fsp.<PROJECT>` 디렉토리 절대경로 |
+| `sdk_project_path` | string (절대경로) | ✓ | `<PROJECT>_CPP_SDK` 디렉토리 절대경로 (CPP), 또는 JAVA SDK 모듈 |
+| `app_project_path` | string (절대경로) | ✓ | `<PROJECT>_<APP>` 앱 프로젝트 디렉토리 절대경로 (기존 필드 — helper 가 우선 사용) |
+| `customui_src_path` | string (절대경로) \| null | optional | react 모드 customui-src 절대경로 (vanilla 면 null) |
+| `deep_ui_path` | string (절대경로) | ✓ | 앱 프로젝트 안 deep `ui/` 디렉토리 절대경로 (배포 산출물 위치) |
+
+**`layout_kind`**: enum `nested` \| `flat` \| `unknown` + 미래 확장 가능. **advisory 메타데이터** (diagnostic/UX 용). helper 는 layout_kind 가 unknown / 미래값이어도 5필드가 모두 있으면 그대로 사용한다.
+
+**`app_project_path` vs `sdk_project_path` 의미 구분**: 둘 다 `<PROJECT>_*` 패턴이지만 서로 다른 디렉토리 (앱 vs SDK). helper 는 기존 `app_project_path` 우선 사용, 신규 `sdk_project_path` 는 SDK 전용.
+
+### Backward-compat 정책 (v2)
+
+- **Silent migration 금지**: helper 는 `.seamos-context.json` 을 read-only 로만 쓴다. 정규화 필드가 없거나 partial 이어도 write-back 하지 않는다.
+- **Write-back 의 단일 진입점**: `create-project` (신규), `setup --adopt` (기존 흡수, 사용자 명시), `init-customui` (customui src path 한정)
+- **Partial context 의 동작 (all-or-nothing)**: 5필드가 전부 있으면 → context 사용. 1개라도 누락되면 → stderr 에 warn + 5필드 전부 디스크 추론. exit 0
+- **사용자 알림 시점**: `setup --adopt` 호출 직후 stdout 에 "context 5필드를 기록했습니다 (`<USER_ROOT>/.seamos-context.json`)" 1회만
 
 ### Resume decision matrix
 
