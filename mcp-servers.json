@@ -10,6 +10,11 @@
     "ads": {
       "type": "http",
       "url": "https://mcp.ads.seamos.io/"
+    },
+    "seamos-docs": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp-servers/seamos-docs/index.cjs"]
     }
   }
 }

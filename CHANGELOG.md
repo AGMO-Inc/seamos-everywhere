@@ -2,6 +2,40 @@
 
 All notable changes to **seamos-everywhere** are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [SemVer](https://semver.org/) (pre-1.0: minor bumps signal feature additions, patch bumps signal fixes).
 
+## [0.10.0] — 2026-05-13
+
+**Live docs MCP + `ask-docs` skill + SessionStart routing compass.** Three orthogonal additions that turn the plugin from "16 explicit skills" into "agent self-routes on SeamOS workspaces." A local stdio MCP server fronts `docs.seamos.io` with token-efficient retrieval (`mode=outline|section|full` on `get_doc`); a new `ask-docs` skill is the user-facing entry point; and a `SessionStart` hook injects a 34-line routing compass into every SeamOS session — zero token cost outside.
+
+### Added — `seamos-docs` local stdio MCP server (`mcp-servers/seamos-docs/`)
+
+- **Zero-dependency Node script** (~480 lines, Node 18+ built-in `fetch`, no `npm install`). Wired via `${CLAUDE_PLUGIN_ROOT}` in `mcp-servers.json` — works with GitHub-based plugin installs as-is, no publish step.
+- **Three tools**:
+  - `search_docs(query, top_k)` — full-text rank over docs index (`llms.txt`) + bodies (`llms-full.txt`).
+  - `get_doc(url, mode)` — `mode=full|outline|section`. Outline returns only H1–H3 headings (~5–10% of full size); section extracts the body under one heading. Cuts `get_doc` token cost by 25–88% depending on shape. Plain-text response (no JSON-escape envelope) for the body.
+  - `list_sections({summary})` — section tree; `summary=true` returns names + page counts only.
+- **Locale-aware** — default `ko` (project Korean-first policy); `SEAMOS_DOCS_LOCALE=en` switches to `/llms.txt` with no prefix. `SEAMOS_DOCS_BASE_URL` overrides origin for staging / local Docusaurus servers.
+- **Cache** — `~/.cache/seamos-docs/`, 24h TTL. Repeated queries are offline-tolerant; stale cache is served when the network or origin fails.
+- **SPA-fallback guard** — Docusaurus serves 200 HTML for unknown paths; the MCP detects via `content-type` + body sniff and emits a clear "llms.txt not yet published" error instead of silently returning empty results.
+
+### Added — `/ask-docs` skill (`skills/ask-docs/SKILL.md`)
+
+- User-facing entry point for "공식 문서에 뭐 있어?" / "docs.seamos.io 에서 찾아줘" type questions.
+- Workflow: `search_docs` → `get_doc(mode=outline)` for large pages → `get_doc(mode=section)` for the relevant block → synthesize in Korean with cited source URLs.
+- Cross-skill guideline: other skills MAY call `seamos-docs` tools directly as a long-tail fallback when their local `references/` don't cover a topic.
+
+### Added — `SessionStart` routing compass (`hooks/`)
+
+- **`hooks/hooks.json`** — registers a `SessionStart` hook for `startup|resume|clear|compact` events.
+- **`hooks/session-start`** (bash, executable) — walks up to 8 directory levels looking for SeamOS workspace markers (`.seamos-workspace.json`, `seamos-assets/`, or `.mcp.json` mentioning `seamos-marketplace` / `seamos-docs`) and `cat`s the compass to stdout. Claude Code captures stdout as `SessionStart hook additional context` — same mechanism agmo plugin uses.
+- **`hooks/compass.md`** (34 lines, ~1.7 KB ≒ ~450 tokens) — intent → skill mapping for 14 user intents, USER_ROOT / Protected Region / dynamic CustomUI port conventions, and common don'ts.
+- **Zero-cost outside SeamOS sessions** — hook exits silently on non-SeamOS workspaces. No file is ever written to the user's repo (no on-disk CLAUDE.md injection).
+
+### Changed — README / CLAUDE.md
+
+- Skills badge `16` → `17` (adds `ask-docs`); version badge `0.9.1` → `0.10.0`.
+- README: new `ask-docs` skill section, Skill comparison entry, MCP servers table (3 servers including the new local stdio `seamos-docs`), Session bootstrap subsection.
+- CLAUDE.md: new `Docs Reference MCP` section, MCP Configuration json example updated, new `SessionStart Compass` section.
+
 ## [0.9.1] — 2026-05-13
 
 `create-project` / `regen-sdk-app` 가 사용하는 `public.ecr.aws/g0j5z0m9/seamos-fd-headless:latest` 의 베이크된 FD Headless 바이너리를 `8.6.0-SNAPSHOT-260419.0754` → `8.6.0-SNAPSHOT-260512.1202` 로 갱신. 같은 `:latest` 태그로 푸시했으므로 스크립트 / 스킬 동작 변경 0 건. 호스트는 `docker pull --platform linux/amd64 public.ecr.aws/g0j5z0m9/seamos-fd-headless:latest` 한 번만 강제 갱신 필요 (Docker 는 digest 가 달라 새로 받음). 구버전 태그 `:8.6.0-SNAPSHOT-260419.0754` 는 롤백용으로 ECR 에 보존.

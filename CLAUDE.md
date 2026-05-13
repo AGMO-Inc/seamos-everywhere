@@ -51,6 +51,25 @@ Wraps the seamos-backend API. Handles app publishing to the SeamOS marketplace.
 | `update_app` | APP_DEPLOY | Get REST endpoint info for uploading a new version |
 | `edit_app_metadata` | APP_WRITE | Edit app metadata (name, description, categories, deviceTypes, etc.) |
 
+## Docs Reference MCP (`seamos-docs`)
+
+A **local stdio MCP server** bundled with this plugin at `mcp-servers/seamos-docs/index.cjs`. Fronts https://docs.seamos.io by reading `/llms.txt` (index) and `/llms-full.txt` (page bodies) — the docusaurus-plugin-llms format. Zero npm dependencies, Node 18+ built-in `fetch` only. Registered via `${CLAUDE_PLUGIN_ROOT}` in `mcp-servers.json` so GitHub-based plugin installs pick it up without an `npm install` step.
+
+| Tool | Description |
+|------|-------------|
+| `search_docs` | Full-text search across the docs (top-k matches with snippets and scores) |
+| `get_doc` | Fetch a page by URL with `mode=full\|outline\|section` for token-efficient retrieval |
+| `list_sections` | Enumerate doc categories (pass `summary=true` for just names + page counts) |
+
+- **Locale**: default `ko` (set `SEAMOS_DOCS_LOCALE=en` to switch — affects which `/llms.txt` path is fetched)
+- **Base URL**: default `https://docs.seamos.io` (override with `SEAMOS_DOCS_BASE_URL`, useful for local Docusaurus servers)
+- **Cache**: `~/.cache/seamos-docs/`, 24h TTL — repeated queries are offline-tolerant
+- **Entry skill**: `/ask-docs` (`skills/ask-docs/SKILL.md`) is the user-facing entry point. Other skills may call these tools directly as a long-tail fallback when their local `references/` don't cover the topic.
+
+## SessionStart Compass
+
+The plugin ships a `SessionStart` hook (`hooks/hooks.json` + `hooks/session-start` + `hooks/compass.md`) that injects a ~34-line **routing compass** into the conversation as additional context — effectively a session-scoped CLAUDE.md without writing any file to the user's repo. Workspace detection walks up to 8 directory levels looking for any of: `.seamos-workspace.json`, `seamos-assets/`, or `.mcp.json` mentioning `seamos-marketplace` / `seamos-docs`. The compass body enumerates intent → skill mappings, USER_ROOT / protected-region / CustomUI conventions, and common don'ts, so the agent can self-route to the right skill without an explicit slash command. Non-SeamOS sessions: zero output, zero token cost.
+
 ## AI Development Pipeline
 
 The end-to-end workflow for building a SeamOS app with this plugin:
@@ -84,13 +103,18 @@ MCP servers are configured via `.mcp.json` at the project root. The file is **gi
   "mcpServers": {
     "seamos-marketplace": {
       "url": "http://localhost:8088/mcp"
+    },
+    "seamos-docs": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp-servers/seamos-docs/index.cjs"]
     }
   }
 }
 ```
 
-- The `url` field supports both local (`localhost`) and production deployments.
-- The first MCP call triggers a one-time browser login (OAuth PKCE). The access token is cached by Claude Code and refreshed automatically.
+- The `seamos-marketplace.url` field supports both local (`localhost`) and production deployments. First call triggers a one-time browser login (OAuth PKCE); the access token is cached by Claude Code and refreshed automatically.
+- The `seamos-docs` stdio entry points at the bundled Node script — `${CLAUDE_PLUGIN_ROOT}` is resolved by Claude Code to the plugin install directory, so no path edits are needed regardless of how the plugin was installed.
 
 ## Development Principles
 

@@ -6,8 +6,8 @@
 
 **Claude Code plugin for the SeamOS AI Native developer ecosystem**
 
-[![Version](https://img.shields.io/badge/version-0.9.1-blue.svg)](https://github.com/AGMO-Inc/seamos-everywhere/releases)
-[![Skills](https://img.shields.io/badge/skills-16-orange.svg)](#skills)
+[![Version](https://img.shields.io/badge/version-0.10.0-blue.svg)](https://github.com/AGMO-Inc/seamos-everywhere/releases)
+[![Skills](https://img.shields.io/badge/skills-17-orange.svg)](#skills)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey.svg)](LICENSE)
 [![Org](https://img.shields.io/badge/org-AGMO--Inc-green.svg)](https://github.com/AGMO-Inc)
 
@@ -59,6 +59,20 @@ setup --endpoint https://your-marketplace.example.com      # custom URL
 ```
 
 Project-scope `.mcp.json` takes precedence over the plugin's user-scope MCP registration.
+
+### MCP servers (auto-registered)
+
+| Server | Transport | Purpose | Auth |
+|---|---|---|---|
+| `seamos-marketplace` | HTTPS (remote) | Marketplace ops (`list_apps`, `create_app`, multipart upload, …) | OAuth (PKCE) — one-time browser login |
+| `ads` | HTTPS (remote) | Agmo Design System component reference | none |
+| `seamos-docs` | **stdio (local, bundled)** | Live query of `docs.seamos.io` via `llms.txt` / `llms-full.txt`. Used by the `ask-docs` skill and as a long-tail fallback for other skills. | none (read-only public docs) |
+
+The `seamos-docs` server ships inside the plugin (`mcp-servers/seamos-docs/index.cjs`, zero npm deps, Node 18+ built-in `fetch`). GitHub-based plugin install picks it up automatically via the `${CLAUDE_PLUGIN_ROOT}` placeholder in `mcp-servers.json` — no `npm install` step.
+
+### Session bootstrap (routing compass)
+
+The plugin's `SessionStart` hook (`hooks/session-start` + `hooks/compass.md`) injects a 34-line **routing compass** into the conversation when the current working directory looks like a SeamOS workspace — detected by walking up to 8 directory levels for any of: `.seamos-workspace.json`, `seamos-assets/`, or `.mcp.json` mentioning `seamos-marketplace` / `seamos-docs`. The compass enumerates **intent → skill** mappings (e.g., "REST/WS/DB 코드" → `seamos-app-framework`, ".fif 빌드" → `build-fif`) plus key conventions and don'ts, so the agent can self-route to the right skill without an explicit `/seamos-everywhere:*` slash command. Outside SeamOS workspaces the hook exits silently — **zero output, zero token cost**.
 
 > **Upgrading from v0.5.x – v0.7.4?** v0.7.5 removes the `seamos_api_url` userConfig entirely. If your `~/.claude/settings.json` still has it, you can delete the entry — it's no longer read. The dev URL is now embedded in the plugin's `mcp-servers.json`.
 
@@ -272,6 +286,33 @@ Re-run FD Headless `UPDATE_SDK_APP` on an existing project. Refreshes the genera
 
 ---
 
+### ask-docs
+
+Query the live SeamOS official docs at [docs.seamos.io](https://docs.seamos.io). Wraps the bundled `seamos-docs` local stdio MCP server (zero external dependencies) and answers in Korean with cited source URLs. Other skills may also call the MCP as a long-tail fallback when their local references don't cover the topic.
+
+**Triggers:** `/ask-docs` · `공식 문서` · `seamos 문서` · `docs.seamos.io` · `official docs` · `docs 검색`
+
+```
+/seamos-everywhere:ask-docs <question>
+```
+
+**Flow:**
+1. `search_docs(query)` — full-text rank over the docs index (`llms.txt`) + bodies (`llms-full.txt`)
+2. `get_doc(url, mode)` — fetch only what's needed:
+   - `mode="outline"` — H1–H3 headings only (~5–10% of full size)
+   - `mode="section"` — body under one heading
+   - `mode="full"` — entire page (default)
+3. Synthesize a Korean answer with source URLs cited
+
+| Feature | Details |
+|---------|---------|
+| Source | `https://docs.seamos.io/{ko\|en}/llms.txt` + `/llms-full.txt` (docusaurus-plugin-llms format) |
+| Locale | `ko` default — override with `SEAMOS_DOCS_LOCALE=en` |
+| Cache | `~/.cache/seamos-docs/`, 24h TTL — repeated queries are offline-tolerant |
+| Transport | Local Node stdio MCP (`mcp-servers/seamos-docs/index.cjs`), zero npm deps |
+
+---
+
 ### Skill comparison
 
 | Want to... | Skill |
@@ -284,6 +325,7 @@ Re-run FD Headless `UPDATE_SDK_APP` on an existing project. Refreshes the genera
 | Publish a brand-new app to the marketplace | `upload-app` |
 | Push a new version of an existing app | `update-app` |
 | Install / update / uninstall an app on a device | `manage-device-app` |
+| Ask the official docs anything (live `docs.seamos.io`) | `ask-docs` |
 
 ---
 
