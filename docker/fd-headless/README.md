@@ -209,6 +209,23 @@ docker run --rm --platform linux/amd64 \
   public.ecr.aws/g0j5z0m9/seamos-fd-headless:latest
 ```
 
+### Cache Refresh after Image Bump
+
+ECR 의 `:latest` 가 새 digest 로 교체되어도, 이미 같은 태그를 받아둔 호스트는 `docker run` 시 로컬 캐시를 사용해 **구 이미지가 그대로 잡힐 수 있다**. 안전하게 신 이미지를 받으려면 호스트에서 1회 강제 pull:
+
+```bash
+docker pull --platform linux/amd64 \
+  public.ecr.aws/g0j5z0m9/seamos-fd-headless:latest
+```
+
+- 동일 태그라도 digest 가 다르면 Docker 가 신 이미지를 받는다. 그러나 `create-project` / `regen-sdk-app` 의 docker run 경로는 이미지가 로컬에 이미 있으면 pull 을 건너뛰므로, 명시적 pull 없이는 구 이미지가 계속 쓰일 수 있음.
+- `--platform linux/amd64` 누락 시 Apple Silicon 등 ARM 호스트에서 multi-arch 인덱스가 ARM 변형으로 풀려 stale 이미지가 잡히는 회귀가 가능하므로 platform 옵션을 명시 권장.
+- 현재 digest 확인:
+  ```bash
+  docker inspect public.ecr.aws/g0j5z0m9/seamos-fd-headless:latest \
+    --format '{{index .RepoDigests 0}}'
+  ```
+
 ---
 
 ## Offline Bundle (Air-gapped)

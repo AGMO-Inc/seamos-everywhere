@@ -2,6 +2,28 @@
 
 All notable changes to **seamos-everywhere** are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [SemVer](https://semver.org/) (pre-1.0: minor bumps signal feature additions, patch bumps signal fixes).
 
+## [0.9.1] — 2026-05-13
+
+`create-project` / `regen-sdk-app` 가 사용하는 `public.ecr.aws/g0j5z0m9/seamos-fd-headless:latest` 의 베이크된 FD Headless 바이너리를 `8.6.0-SNAPSHOT-260419.0754` → `8.6.0-SNAPSHOT-260512.1202` 로 갱신. 같은 `:latest` 태그로 푸시했으므로 스크립트 / 스킬 동작 변경 0 건. 호스트는 `docker pull --platform linux/amd64 public.ecr.aws/g0j5z0m9/seamos-fd-headless:latest` 한 번만 강제 갱신 필요 (Docker 는 digest 가 달라 새로 받음). 구버전 태그 `:8.6.0-SNAPSHOT-260419.0754` 는 롤백용으로 ECR 에 보존.
+
+### Changed — `seamos-fd-headless:latest` 이미지 바이너리 업그레이드
+
+- `docker/fd-headless/Dockerfile`: `ADD` 대상 tar.gz 파일명을 신 버전으로 교체.
+- `docker/fd-headless/checksums.txt`: 신 SHA256 `5afed46532c6ffcbb84f980f208a1bc26458580266b062cf81e4ae689005d777` 반영.
+- `skills/create-project/references/fd-version.json`: `fd_version` / `tarball_filename` / `tarball_sha256` / `checksums_txt_sha256` / `updated_at` 5필드 갱신.
+- `LEGAL.md`: Binary 섹션의 Version / Artifact / SHA256 갱신 (재배포 동의 범위 변경 없음 — 동일 제품군 패치 빌드).
+- `.github/workflows/build-fd-image.yml`: `workflow_dispatch` input 의 예시 버전 문구만 신 버전으로 교체. 실제 워크플로 트리거는 본 릴리즈와 무관 (이번 push 는 수동 push 경로 사용).
+- `docker/fd-headless/README.md`: Source binary 표기 + S3 예시 버전 문구 갱신. **신규** "Cache Refresh after Image Bump" 절 추가 (digest 다르면 Docker 가 알아서 새로 받지만, `--platform linux/amd64` 누락 시 ARM 호스트에서 stale 이미지가 잡힐 수 있으니 호스트 1회 명시적 pull 권장).
+
+### Host pull (사용자 캐시 갱신)
+
+```bash
+docker pull --platform linux/amd64 \
+  public.ecr.aws/g0j5z0m9/seamos-fd-headless:latest
+```
+
+이미 구 `:latest` 를 받아둔 호스트에서만 필요. `create-project` / `regen-sdk-app` 의 docker run 은 캐시 부재 시 자동 pull 이므로, 위 명령을 건너뛰어도 다음 실행에서 신 이미지를 받지만 첫 실행만 다운로드 시간이 추가된다.
+
 ## [0.9.0] — 2026-05-12
 
 **두 레이아웃 호환성 — `.seamos-context.json` 5필드 frozen contract + `resolve-paths.sh` SSOT helper 도입.** SeamOS workspace 는 두 레이아웃이 공존한다 — Layout A (nested, plugin `create-project` 기본값: `$USER_ROOT/$PROJECT_NAME/$PROJECT_NAME/com.bosch.fsp.*`) 와 Layout B (flat, seamos-IDE 기본값: `$USER_ROOT/com.bosch.fsp.*`). 다수 스크립트가 한쪽 레이아웃의 경로 합성식을 하드코딩하고 있어 다른 레이아웃에서 무음 실패했다. 본 릴리즈는 (1) 정규화된 경로를 `.seamos-context.json > last_project` 의 5필드 SSOT 로 격상, (2) 6개 스킬을 path-derivation helper 로 위임, (3) 기존 디스크에 적응할 수 있는 `setup --adopt` 모드를 추가해 호환성을 확보한다. **회귀 0 원칙**: Layout A (nested) 위에서 모든 변경 스킬의 dry-run 출력이 v0.8.0 과 byte-identical (단 `regen-sdk-app` 의 `MOUNT_ROOT=` 1라인 추가는 expected).
