@@ -4,9 +4,9 @@
 
 ## Binary
 - **Product**: FD Headless (FeatureDesigner Headless)
-- **Version**: 8.6.0-SNAPSHOT-260419.0754
-- **Artifact**: `FD_Headless-linux.gtk.x86_64-8.6.0-SNAPSHOT-260419.0754.tar.gz`
-- **SHA256**: `7aac4d370386656cf1d95ce2a0b5ba1e84fb3c2d9a07eb94d7caed0cc98c7128`
+- **Version**: 8.6.0-SNAPSHOT-260512.1202
+- **Artifact**: `FD_Headless-linux.gtk.x86_64-8.6.0-SNAPSHOT-260512.1202.tar.gz`
+- **SHA256**: `5afed46532c6ffcbb84f980f208a1bc26458580266b062cf81e4ae689005d777`
 
 ## Approval
 

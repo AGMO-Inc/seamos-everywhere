@@ -7,7 +7,7 @@ Linux-native FD Headless 8.6.0 wrapped in a Docker image for the seamos-everywhe
 - **Base image**: `debian:bookworm-slim`
 - **Runtime**: Eclipse Temurin 21 JRE + GTK 3 minimal
 - **Architecture**: `linux/amd64` single-arch
-- **Source binary**: Nevonex-supplied FD Headless 8.6.0-SNAPSHOT-260419.0754 (Eclipse RCP ELF)
+- **Source binary**: Nevonex-supplied FD Headless 8.6.0-SNAPSHOT-260512.1202 (Eclipse RCP ELF)
 - **Package target**: AWS Public ECR — `public.ecr.aws/g0j5z0m9/seamos-fd-headless`
 
 ---
@@ -129,7 +129,7 @@ s3://<bucket>/fd-headless/<version>/FD_Headless-linux.gtk.x86_64-<version>.tar.g
 
 **Placeholders:**
 - `<bucket>`: 조직 소유 S3 버킷 이름 (예: `agmo-fd-artifacts`)
-- `<version>`: 바이너리 버전 식별자 (예: `8.6.0-SNAPSHOT-260419.0754`)
+- `<version>`: 바이너리 버전 식별자 (예: `8.6.0-SNAPSHOT-260512.1202`)
 
 **Upload (Nevonex side):**
 

@@ -1,8 +1,8 @@
 {
-  "fd_version": "8.6.0-SNAPSHOT-260419.0754",
-  "tarball_filename": "FD_Headless-linux.gtk.x86_64-8.6.0-SNAPSHOT-260419.0754.tar.gz",
-  "tarball_sha256": "7aac4d370386656cf1d95ce2a0b5ba1e84fb3c2d9a07eb94d7caed0cc98c7128",
+  "fd_version": "8.6.0-SNAPSHOT-260512.1202",
+  "tarball_filename": "FD_Headless-linux.gtk.x86_64-8.6.0-SNAPSHOT-260512.1202.tar.gz",
+  "tarball_sha256": "5afed46532c6ffcbb84f980f208a1bc26458580266b062cf81e4ae689005d777",
   "offlinedb_sha256": "c8a7c7c17711f45b61f16af50e280655a459765710595ed2dbc5fbbcc75f4b7b",
-  "checksums_txt_sha256": "80f0b787b0c330650b670f3fc9a0142434991870a7e6fe39b2db85bef73e9940",
-  "updated_at": "2026-04-21T16:34:35Z"
+  "checksums_txt_sha256": "a89445e3e2a1f410c9ed9cb2b535fe35782c411fc7ee4676ab6ff487ac2976fd",
+  "updated_at": "2026-05-13T01:57:46Z"
 }

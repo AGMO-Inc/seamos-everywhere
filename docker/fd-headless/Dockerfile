@@ -12,7 +12,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # FD Headless binary (tar.gz auto-extracted by ADD)
-ADD ref/Linux_HeadlessFD/FD_Headless-linux.gtk.x86_64-8.6.0-SNAPSHOT-260419.0754.tar.gz /opt/fd/
+ADD ref/Linux_HeadlessFD/FD_Headless-linux.gtk.x86_64-8.6.0-SNAPSHOT-260512.1202.tar.gz /opt/fd/
 
 # FD CLI args single source of truth (A.2 output)
 COPY docker/fd-headless/scripts/fd-args.sh /opt/fd/fd-args.sh
