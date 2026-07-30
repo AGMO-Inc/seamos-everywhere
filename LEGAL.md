@@ -4,9 +4,9 @@
 
 ## Binary
 - **Product**: FD Headless (FeatureDesigner Headless)
-- **Version**: 8.6.0-SNAPSHOT-260512.1202
-- **Artifact**: `FD_Headless-linux.gtk.x86_64-8.6.0-SNAPSHOT-260512.1202.tar.gz`
-- **SHA256**: `5afed46532c6ffcbb84f980f208a1bc26458580266b062cf81e4ae689005d777`
+- **Version**: 8.6.0-NVX90-V3.1.0 (NVX90 V3.1.0 delivery; FD build 8.6.0.202606260649)
+- **Artifact**: `FD_Headless-linux.gtk.x86_64-8.6.0-NVX90-V3.1.0.tar.gz` (delivered as `NVX90_V3.1.0_FD_Headless_LINUX.gz`)
+- **SHA256**: `bf41e14a2cabcf098664a43b1e04cb9b0be1d7fd2254bf6830c2e11654930fa2`
 
 ## Approval
 

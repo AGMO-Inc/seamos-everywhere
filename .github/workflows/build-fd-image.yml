@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'FD binary version (e.g. 8.6.0-SNAPSHOT-260512.1202)'
+        description: 'FD binary version (e.g. 8.6.0-NVX90-V3.1.0)'
         required: true
         type: string
   push:

@@ -2,6 +2,44 @@
 
 All notable changes to **seamos-everywhere** are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [SemVer](https://semver.org/) (pre-1.0: minor bumps signal feature additions, patch bumps signal fixes).
 
+## [0.10.1] — 2026-07-30
+
+`create-project` / `regen-sdk-app` 가 사용하는 `public.ecr.aws/g0j5z0m9/seamos-fd-headless:latest` 의 베이크된 FD Headless 바이너리를 `8.6.0-SNAPSHOT-260512.1202` → `8.6.0-NVX90-V3.1.0` (NVX90 V3.1.0 딜리버리, FD 빌드 `8.6.0.202606260649`) 로 갱신. 같은 `:latest` 태그로 푸시했으므로 스크립트 / 스킬 동작 변경 0 건. 호스트는 `docker pull --platform linux/amd64 public.ecr.aws/g0j5z0m9/seamos-fd-headless:latest` 한 번만 강제 갱신 필요 (Docker 는 digest 가 달라 새로 받음). 구버전 태그 `:8.6.0-SNAPSHOT-260512.1202` / `:8.6.0-SNAPSHOT-260419.0754` 는 롤백용으로 ECR 에 보존, 신버전 버전 태그는 `:8.6.0-NVX90-V3.1.0`.
+
+### Changed — `seamos-fd-headless:latest` 이미지 바이너리 업그레이드
+
+- `docker/fd-headless/Dockerfile`: `ADD` 대상 tar.gz 파일명을 `FD_Headless-linux.gtk.x86_64-8.6.0-NVX90-V3.1.0.tar.gz` 로 교체 (tarball 내부 레이아웃 동일 — entrypoint / fd-args 변경 0 건).
+- `docker/fd-headless/checksums.txt`: 신 SHA256 `bf41e14a2cabcf098664a43b1e04cb9b0be1d7fd2254bf6830c2e11654930fa2` 반영.
+- `skills/create-project/references/fd-version.json`: `fd_version` / `tarball_filename` / `tarball_sha256` / `checksums_txt_sha256` / `updated_at` 5필드 갱신.
+- `LEGAL.md`: Binary 섹션의 Version / Artifact / SHA256 갱신 (재배포 동의 범위 변경 없음 — 동일 제품군 8.6.0 계열 빌드, 버전 태그도 승인 범위 `:8.6.0-*` 준수).
+- `.github/workflows/build-fd-image.yml`: `workflow_dispatch` input 의 예시 버전 문구만 신 버전으로 교체 (이번 push 는 수동 push 경로 사용).
+- `docker/fd-headless/README.md`: Source binary 표기 + S3 예시 버전 문구 갱신.
+- 검증: GENERATE_FSP / GENERATE_SDK_APP / UPDATE_SDK_APP 3-operation 실제 실행 스모크 + 아래 Tier 2 e2e 통과.
+
+### Fixed — flat (Layout B) 워크스페이스에서 `fd.project.path` 오계산
+
+- `build-config-prop.sh` 가 nested 레이아웃 경로(`/workspace/<P>/com.bosch.fsp.<P>`)를 하드코딩해 flat 워크스페이스에서 UPDATE_SDK_APP 이 `SEVERE: FD Project path is incorrect` silent no-op 으로 끝나는 문제 수정. 신규 `--fsp-project-path` 인자 추가(미지정 시 기존 nested 기본값 — 하위호환), `regen-sdk-app.sh` 가 resolve-paths.sh 의 `FSP_PATH_CONTAINER` 를 그대로 전달.
+- 단, FD Headless 자체가 flat 레이아웃의 UPDATE_SDK_APP 을 지원하지 못함을 확인 (workspace 루트 직속 프로젝트는 Eclipse `getRawLocation()` 이 null → NPE). 기존 "flat 은 IDE 안에서 실행 권장" WARN 의 근거가 실측으로 확정됨.
+
+### Fixed — Tier 2 e2e (`docker-once.sh`) 전면 재작성
+
+기존 스크립트는 도입 커밋(v0.9.0)부터 `__USER_ROOT__` 토큰 미치환으로 docker 실행에 도달한 적이 없었고, 그 부작용으로 repo 루트에 `__USER_ROOT__/` junk 디렉토리를 생성했다 (정리 완료). 재작성 내용:
+
+- **실제 파이프라인 3-stage 로 재설계**: fixture 의 빈 스켈레톤 대신 FD 가 직접 생성한 진짜 워크스페이스 사용 — GENERATE_FSP → GENERATE_SDK_APP → `regen-sdk-app.sh` (UPDATE_SDK_APP). FD 는 `.project` 없는 빈 FSP/앱 디렉토리를 `Invalid app project` 로 거부하므로 fixture 기반 접근은 원리적으로 불가.
+- **어서션 교정**: `grep '^SEVERE'` → FD 로그는 타임스탬프 prefix 라 라인 시작 매칭이 항상 실패했음; `SEVERE` 부분 매칭으로 수정. app `src-gen/` mtime 검사 → UPDATE 는 유저 코드 보존으로 app src-gen 이 byte-identical 할 수 있어 `<P>_CPP_SDK.zip` mtime 전진으로 교체.
+- **이미지 존재 체크**: `docker image inspect` → `docker images -q` (arm64 호스트 + containerd 스토어에서 amd64 전용 이미지에 대해 inspect 가 `No such image` 를 반환하는 문제 우회).
+- UPDATE_SDK_APP 은 `ui/` 폴더가 비어 있으면 `App project does not contain the custom ui folder` 로 실패 — e2e 는 stub `ui/index.html` 을 시드 (실사용 프로젝트는 UI 콘텐츠 보유).
+
+### Fixed — `test_cli.sh` (create-project Tier 1) 2건 실패
+
+v0.9.0 에서 추가된 두 가드(`--workspace` 는 USER_ROOT 내부 필수, non-TTY 시 `--codegen-type` 필수)를 테스트가 반영하지 못해 실패하던 것 수정 — tmp USER_ROOT(`.mcp.json` 마커) 안에서 실행하도록 케이스 4/5 재작성. 전체 스위트 green: resolve-paths 44/44, dry-run Tier 1 21/21, create-project run_all 전체 PASS, Tier 2 1/1.
+
+### Host pull (사용자 캐시 갱신)
+
+```bash
+docker pull --platform linux/amd64 public.ecr.aws/g0j5z0m9/seamos-fd-headless:latest
+```
+
 ## [0.10.0] — 2026-05-13
 
 **Live docs MCP + `ask-docs` skill + SessionStart routing compass.** Three orthogonal additions that turn the plugin from "16 explicit skills" into "agent self-routes on SeamOS workspaces." A local stdio MCP server fronts `docs.seamos.io` with token-efficient retrieval (`mode=outline|section|full` on `get_doc`); a new `ask-docs` skill is the user-facing entry point; and a `SessionStart` hook injects a 34-line routing compass into every SeamOS session — zero token cost outside.

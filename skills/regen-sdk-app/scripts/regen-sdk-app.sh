@@ -208,6 +208,7 @@ RESOLVED="$(bash "$RESOLVE_PATHS" "$USER_ROOT")" || {
 }
 FSP_PATH="$(printf '%s\n' "$RESOLVED" | grep '^FSP_PATH=' | head -1 | cut -d= -f2-)"
 APP_PROJECT_PATH_CONTAINER="$(printf '%s\n' "$RESOLVED" | grep '^APP_PROJECT_PATH_CONTAINER=' | head -1 | cut -d= -f2-)"
+FSP_PATH_CONTAINER="$(printf '%s\n' "$RESOLVED" | grep '^FSP_PATH_CONTAINER=' | head -1 | cut -d= -f2-)"
 MOUNT_ROOT="$(printf '%s\n' "$RESOLVED" | grep '^MOUNT_ROOT=' | head -1 | cut -d= -f2-)"
 LAYOUT_KIND="$(printf '%s\n' "$RESOLVED" | grep '^LAYOUT_KIND=' | head -1 | cut -d= -f2-)"
 # Layout-B (flat) advisory guard — this skill is for plugin create-project
@@ -288,6 +289,7 @@ bash "$BUILD_CONFIG" \
   --process-timer     "$PROCESS_TIMER" \
   --mvn-args          "$MVN_ARGS" \
   --app-project-path  "$APP_PROJECT_PATH_CONTAINER" \
+  --fsp-project-path  "$FSP_PATH_CONTAINER" \
   --output            "$CONFIG_PROP"
 
 # ─── ensure_image ──────────────────────────────────────────────────────────

@@ -16,6 +16,11 @@ Options:
   --app-project-path <path>     Existing app project path (UPDATE_SDK_APP only).
                                 When set, a `app.project.path=<value>` line is
                                 emitted. Omit for GENERATE_SDK_APP.
+  --fsp-project-path <path>     Container path of the FSP project. Overrides the
+                                nested-layout default
+                                (/workspace/<ProjectName>/com.bosch.fsp.<ProjectName>).
+                                Pass resolve-paths.sh FSP_PATH_CONTAINER so flat
+                                (Layout B) workspaces resolve correctly.
   --output <path>               Output file path (required)
   --help                        Show this help
 
@@ -41,6 +46,7 @@ CODEGEN_TYPE="CPP"
 PROCESS_TIMER="1s"
 MVN_ARGS=""
 APP_PROJECT_PATH=""
+FSP_PROJECT_PATH=""
 OUTPUT=""
 
 if [[ $# -eq 0 ]]; then
@@ -56,6 +62,7 @@ while [[ $# -gt 0 ]]; do
     --process-timer)     PROCESS_TIMER="${2:-}"; shift 2 ;;
     --mvn-args)          MVN_ARGS="${2:-}"; shift 2 ;;
     --app-project-path)  APP_PROJECT_PATH="${2:-}"; shift 2 ;;
+    --fsp-project-path)  FSP_PROJECT_PATH="${2:-}"; shift 2 ;;
     --output)            OUTPUT="${2:-}"; shift 2 ;;
     --help|-h)           usage; exit 0 ;;
     *) echo "ERROR: unknown argument: $1" >&2; usage >&2; exit 64 ;;
@@ -85,8 +92,12 @@ esac
 # UPDATE_SDK_APP (PDF §4) requires an extra `app.project.path` line pointing at
 # the existing app project; GENERATE_SDK_APP (PDF §3) omits it. We keep a single
 # script and switch on --app-project-path.
+# Nested layout is the default; --fsp-project-path (resolve-paths.sh
+# FSP_PATH_CONTAINER) overrides it for flat (Layout B) workspaces.
+[[ -z "$FSP_PROJECT_PATH" ]] && FSP_PROJECT_PATH="/workspace/${PROJECT_NAME}/com.bosch.fsp.${PROJECT_NAME}"
+
 {
-  echo "fd.project.path=/workspace/${PROJECT_NAME}/com.bosch.fsp.${PROJECT_NAME}"
+  echo "fd.project.path=${FSP_PROJECT_PATH}"
   if [[ -n "$APP_PROJECT_PATH" ]]; then
     echo "app.project.path=${APP_PROJECT_PATH}"
   fi
