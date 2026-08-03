@@ -103,10 +103,21 @@ For Docker image version 9.0.0+, the SDK may be distributed as `<name>_CPP_SDK.z
 
 ## Docker Image Management
 
-- Default image: `public.ecr.aws/g0j5z0m9/seamos/app-builder:8.5.0` (AWS Public ECR)
+- Default image: `public.ecr.aws/g0j5z0m9/seamos/app-builder:8.5.0.1.1.0` (AWS Public ECR, NVX90 V3.1.0 세대)
 - Override via `NVX_DOCKER_IMAGE` environment variable
 - After pull, tagged locally as `nvx-fif-gen:<version>` for caching
 - Subsequent runs skip pull if local tag exists
+
+### Sysroot generation auto-detect (CPP)
+
+FD 8.6 codegen은 인터페이스 구성에 따라 `src-gen/nevonex/fcb/*ConnectionFactoryImpl.cpp` 에 두 TLS getter 계열 중 하나를 방출한다:
+
+| SDK 코드가 호출하는 API | sysroot 세대 | 선택되는 이미지 |
+|------------------------|--------------|----------------|
+| `getCaCertPath` / `getClientCertPath` / `getClientKeyPath` | 신세대 (NVX90 V3.1.0) | `:8.5.0.1.1.0` (기본) |
+| `getMqttTrustStorePath` / `getMqttKeyStorePath` / `getMqttPrivateKeyPath` | 구세대 (FD 8.5.x) | `:8.5.0` (자동 전환) |
+
+두 sysroot 의 getter 집합은 서로소라 단일 이미지로는 두 부류를 모두 컴파일할 수 없다. `build-fif.sh` 가 SDK 소스에서 legacy 계열을 감지하면 `:8.5.0` 으로 자동 전환하며 `[sysroot-detect]` 로그를 남긴다. `NVX_DOCKER_IMAGE` 를 명시하면 감지를 건너뛰고 그 값을 그대로 쓴다.
 
 ## invoke_offline_util.sh Mapping
 

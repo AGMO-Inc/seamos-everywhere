@@ -9,7 +9,7 @@
 # When omitted, USER_ROOT is discovered by walking upward from $PWD (v4 CIMP-1).
 #
 # Environment:
-#   NVX_DOCKER_IMAGE - Docker registry image (default: public.ecr.aws/g0j5z0m9/seamos/app-builder:8.5.0)
+#   NVX_DOCKER_IMAGE - Docker registry image (default: public.ecr.aws/g0j5z0m9/seamos/app-builder:8.5.0.1.1.0)
 #   FEATURE_NAME     - Override feature/project name (legacy alias; --project-name preferred)
 #   APP_TYPE         - Force app type: "java" or "cpp" (default: auto-detect)
 #   ARCH_TYPE        - Target architecture: "aarch64", "arm32", "x86_64" (default: aarch64)
@@ -243,7 +243,9 @@ PROJ_ROOT="$FD_APP_ROOT"  # legacy alias used by the rest of the script
 FSP_PATH="$FD_APP_ROOT/com.bosch.fsp.$FEATURE_NAME"
 
 CONTAINER="nvx-fif-gen-cntr"
-NVX_DOCKER_IMAGE="${NVX_DOCKER_IMAGE:-public.ecr.aws/g0j5z0m9/seamos/app-builder:8.5.0}"
+NVX_IMAGE_EXPLICIT="${NVX_DOCKER_IMAGE:+1}"
+NVX_DOCKER_IMAGE="${NVX_DOCKER_IMAGE:-public.ecr.aws/g0j5z0m9/seamos/app-builder:8.5.0.1.1.0}"
+NVX_DOCKER_IMAGE_LEGACY="public.ecr.aws/g0j5z0m9/seamos/app-builder:8.5.0"
 NVX_VERSION="${NVX_DOCKER_IMAGE##*:}"
 ARCH_TYPE="${ARCH_TYPE:-aarch64}"
 BUILD_DIR="$USER_ROOT/seamos-assets/builds"
@@ -440,6 +442,36 @@ if [[ $DRY_RUN -eq 1 ]]; then
   echo "[dry-run] DISK_POLICY: will exclude disk/* except disk/seed/"
   echo "[dry-run] DISK_SCAN_RESULT: $(disk_packaging_policy --dry-run "$APP_PATH")"
   exit 0
+fi
+
+# ── Sysroot generation auto-detect (CPP only) ──────────────
+# FD 8.6 codegen emits one of two mutually-exclusive TLS getter families in
+# src-gen/nevonex/fcb/*ConnectionFactoryImpl.cpp depending on the interface
+# selection (Cloud 계열 포함 → getCaCertPath family, 미포함 → legacy
+# getMqttTrustStorePath family). The 8.5.0 sysroot has ONLY the legacy family
+# and 8.5.0.1.1.0 (NVX90 V3.1.0) has ONLY the new family, so a single image
+# cannot compile both project classes. Detect which family the SDK uses and
+# pick the matching image. An explicit NVX_DOCKER_IMAGE always wins.
+if [ -z "$NVX_IMAGE_EXPLICIT" ] && [ "$APP_TYPE" = "cpp" ]; then
+    SDK_TLS_FAMILY=""
+    if [ -d "$SDK_PATH/src-gen" ]; then
+        if grep -rq "getMqttTrustStorePath" "$SDK_PATH/src-gen" 2>/dev/null; then
+            SDK_TLS_FAMILY="legacy"
+        elif grep -rq "getCaCertPath" "$SDK_PATH/src-gen" 2>/dev/null; then
+            SDK_TLS_FAMILY="tls"
+        fi
+    elif [ -f "${SDK_PATH}.zip" ]; then
+        if unzip -p "${SDK_PATH}.zip" "*ConnectionFactoryImpl.cpp" 2>/dev/null | grep -q "getMqttTrustStorePath"; then
+            SDK_TLS_FAMILY="legacy"
+        elif unzip -p "${SDK_PATH}.zip" "*ConnectionFactoryImpl.cpp" 2>/dev/null | grep -q "getCaCertPath"; then
+            SDK_TLS_FAMILY="tls"
+        fi
+    fi
+    if [ "$SDK_TLS_FAMILY" = "legacy" ]; then
+        NVX_DOCKER_IMAGE="$NVX_DOCKER_IMAGE_LEGACY"
+        NVX_VERSION="${NVX_DOCKER_IMAGE##*:}"
+        echo "  [sysroot-detect] SDK uses legacy MQTT TLS getters -> ${NVX_DOCKER_IMAGE}"
+    fi
 fi
 
 echo "[2/7] Project validated"

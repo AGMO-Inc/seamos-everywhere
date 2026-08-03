@@ -205,7 +205,7 @@ APP_PROJECT_ROOT="${APP_PROJECT_ROOT:-${USER_ROOT}/${APP_NAME}/${APP_NAME}}"
 CONTAINER_NAME="seamos-run-app-${APP_NAME_LOWER}"
 APP_PORT="${APP_PORT:-6563}"
 BIND_ALL="${BIND_ALL:-0}"
-NVX_DOCKER_IMAGE="${NVX_DOCKER_IMAGE:-public.ecr.aws/g0j5z0m9/seamos/app-builder:8.5.0}"
+NVX_DOCKER_IMAGE="${NVX_DOCKER_IMAGE:-public.ecr.aws/g0j5z0m9/seamos/app-builder:8.5.0.1.1.0}"
 
 # ─── Artifact paths ────────────────────────────────────────────────────────
 # Simulator.properties::uiFolderLocation is read by the Java Spark UI server

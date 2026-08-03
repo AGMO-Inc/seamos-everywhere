@@ -16,7 +16,7 @@
 #   bash skills/run-app/scripts/smoke-test.sh
 #
 # Environment:
-#   NVX_DOCKER_IMAGE  Override the app-builder image (default: 8.5.0)
+#   NVX_DOCKER_IMAGE  Override the app-builder image (default: 8.5.0.1.1.0)
 #   MQTT_DOCKER_IMAGE Override the MQTT broker image (default: eclipse-mosquitto:2)
 #   SMOKE_APP_ROOT    Optional absolute path to an FSP project root
 #                     (enables rw-mount + gen.tests/testlib structure check)
@@ -27,7 +27,7 @@
 
 set -euo pipefail
 
-NVX_DOCKER_IMAGE="${NVX_DOCKER_IMAGE:-public.ecr.aws/g0j5z0m9/seamos/app-builder:8.5.0}"
+NVX_DOCKER_IMAGE="${NVX_DOCKER_IMAGE:-public.ecr.aws/g0j5z0m9/seamos/app-builder:8.5.0.1.1.0}"
 MQTT_DOCKER_IMAGE="${MQTT_DOCKER_IMAGE:-eclipse-mosquitto:2}"
 
 # Pin x86_64 image on Apple Silicon to match run-app.sh; allow RUNAPP_PLATFORM override.

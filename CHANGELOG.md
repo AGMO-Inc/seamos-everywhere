@@ -2,6 +2,26 @@
 
 All notable changes to **seamos-everywhere** are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project adheres to [SemVer](https://semver.org/) (pre-1.0: minor bumps signal feature additions, patch bumps signal fixes).
 
+## [0.10.2] — 2026-08-03
+
+**FD 8.6 SDK ↔ app-builder 8.5.0 플랫폼 API 불일치 해결 — 듀얼 이미지 + sysroot 자동 감지.** "FD 8.6.0이 생성한 SDK 코드가 8.5 플랫폼 API에 맞지 않는다"는 리포트를 실측 재현·분석한 결과, 구세대(`:8.5.0`)와 신세대(NVX90 V3.1.0, `:8.5.0.1.1.0`) sysroot 의 `GlobalConfig` TLS getter 집합이 **완전히 서로소**이고, FD 8.6 codegen 이 인터페이스 구성(Cloud 계열 포함 여부)에 따라 두 API 계열 중 하나를 방출함을 확인했다. 단일 이미지 교체로는 반대 부류가 깨지므로, 두 태그를 ECR 에 공존시키고 `build-fif.sh` 가 SDK 코드를 보고 자동 선택한다.
+
+### Added — ECR `seamos/app-builder:8.5.0.1.1.0` (신세대)
+
+- Bosch offline 딜리버리 `NVX90_V3.1.0_offline_fif_gen__TR_V2.zip` 의 `nvx-fif-gen:8.5.0.1.1.0` (image id `da771c6a`) 을 그대로 푸시. 신세대 sysroot (TLS getter: `getCaCertPath` / `getClientCertPath` / `getClientKeyPath`) 포함.
+- 기존 `:8.5.0` 태그는 **무변경** — seamos-ide 가 태그로 핀해 사용 중이며(sysroot 는 IDE 자체 번들 kit 사용) 영향 0.
+
+### Added — `build-fif.sh` sysroot 세대 자동 감지 (CPP)
+
+- SDK `src-gen/nevonex/fcb/*ConnectionFactoryImpl.cpp` 의 TLS getter 계열을 감지: legacy(`getMqttTrustStorePath` 계열) → `:8.5.0` 자동 전환 + `[sysroot-detect]` 로그, 신계열/미검출 → 기본 `:8.5.0.1.1.0`. SDK 가 `.zip` 으로만 있는 경우도 `unzip -p` 로 감지.
+- 명시적 `NVX_DOCKER_IMAGE` env 는 감지를 건너뛰고 항상 우선.
+- 검증: legacy 프로젝트(IMU 단일 인터페이스)와 신계열 프로젝트(CAN+Cloud 5-branch) 모두 env 없이 FIF 산출 성공 — 기존에는 각각 한쪽 이미지에서만 빌드 가능했다.
+
+### Changed
+
+- `run-app.sh` / `smoke-test.sh` (Java 경로): 기본 이미지를 `:8.5.0.1.1.0` 으로 갱신 (Java 는 sysroot 무관).
+- `build-details.md`: 듀얼 이미지 표 + 자동 감지 동작 문서화.
+
 ## [0.10.1] — 2026-07-30
 
 `create-project` / `regen-sdk-app` 가 사용하는 `public.ecr.aws/g0j5z0m9/seamos-fd-headless:latest` 의 베이크된 FD Headless 바이너리를 `8.6.0-SNAPSHOT-260512.1202` → `8.6.0-NVX90-V3.1.0` (NVX90 V3.1.0 딜리버리, FD 빌드 `8.6.0.202606260649`) 로 갱신. 같은 `:latest` 태그로 푸시했으므로 스크립트 / 스킬 동작 변경 0 건. 호스트는 `docker pull --platform linux/amd64 public.ecr.aws/g0j5z0m9/seamos-fd-headless:latest` 한 번만 강제 갱신 필요 (Docker 는 digest 가 달라 새로 받음). 구버전 태그 `:8.6.0-SNAPSHOT-260512.1202` / `:8.6.0-SNAPSHOT-260419.0754` 는 롤백용으로 ECR 에 보존, 신버전 버전 태그는 `:8.6.0-NVX90-V3.1.0`.
