@@ -144,6 +144,14 @@ platformService->uploadAgriRouterFile(filePath);
 > async `/socket`, `correlation-id` prefix dispatch, `CloudDownloadListener`
 > wiring), see `seamos-app-framework` → External API Server Communication.
 
+> **Note:** Cloud file **pushes** (NFL → device) land in the feature's
+> incoming folder (`/app/in/` inside the container) and the platform reports
+> success back to NFL — but `CloudDownloadListener::handleFile` is **not**
+> invoked on current CCU firmware (verified 2026-09-02, NVX90 3.0.0 / FCAL
+> runtime 8.4.18). Sweep the incoming folder yourself; see
+> `seamos-app-framework` → cpp.md "Receiving files pushed from the cloud
+> (NFL)".
+
 ## Protected Region
 
 > **Note:** C++ generated code uses Protected Region markers to preserve user code during regeneration. Add the keyword `ENABLED` before `START` to activate a region:

@@ -434,6 +434,105 @@ void ApplicationMain::addCustomUIListener() {
 }
 ```
 
+### Receiving files pushed from the cloud (NFL) — poll the incoming folder
+
+> **Warning:** `CloudDownloadListener::handleFile(const FilePath&)` is **not
+> invoked** on current CCU firmware. Verified 2026-09-02 on a Bosch CCU
+> AUTO-IT_RV-C1000 (NVX90 3.0.0 / FCAL runtime 8.4.18 / FD 8.6.0): the
+> platform (FCA) downloads the pushed file into the feature's incoming
+> folder, notifies FIF over `/ca/download/<featureId>/<file>`, and reports
+> success back to NFL — but no `handleFile` call reaches the app (no FCAL log
+> line, the file just sits in the incoming folder). `handleMessage`
+> (external-API responses) is unaffected.
+
+Incoming folder on device:
+
+```
+host:      /userdata/nevonex/data/trans/fif/incoming/<featureId>/
+container: /app/in/
+```
+
+**Working pattern — a sweeper thread.** Start it from the
+`addCloudDownloadListener` protected region. First pass 2 s after start, then
+every 5 s:
+
+1. List the incoming dir — **top-level regular files only**. Skip the `d2d/`
+   and `rf/` subdirectories.
+2. Skip files whose mtime is < 3 s old — the platform may still be writing.
+3. For each remaining file: `rename` it out of the incoming folder →
+   `FileProvider::saveToDisk(FilePath(moved), true)` →
+   `boost::filesystem::remove(moved)`.
+4. Push a WS notice so the UI learns about the new file.
+
+Keep the `handleFile` override too — it is harmless and may fire on other
+runtimes. Alternative API worth trying first on new firmware:
+`FileProvider::retrieveAllDownloadedFiles(ResourceType::CLOUD)`.
+
+**Path trap — the folder getters return HOST paths.**
+`FileProvider::getIncomingFolderPath()`, `getResourcesFolderPath()` and
+`getOutgoingFolderPath()` return the `abs` entries of `feature.config`, which
+on a device are **host** paths that do not exist inside the runc container.
+Only the `rel` paths exist there (`/app/in/`, `/app/out/`,
+`/nevonex/resources`). `saveToDisk`, `retrieveFileFromDisk` and
+`retrieveAllFilesFromDisk` use `rel` internally, so those work.
+`GlobalConfig::getFifInPath()` / `getResourcePath()` are private — no help.
+Do not rely on an IDE local run to catch this. The IDE-generated
+`config/feature.config` pairs `rel` (`./in/`, `./out/`, `./disk/`; the macOS
+Docker build rewrites `in`/`out` to `./temp/download/` and `./temp/upload/`)
+with a placeholder `abs` (`/var/trans/featureid/…`) that has nothing to do
+with the device layout, so whatever the getters return locally proves
+nothing about the device.
+
+Resolve the folder yourself from `$FEATURE_CONFIG` (always set by the
+runtime; on device e.g. `/root/<featureId>.config`) and use whichever
+directory actually exists, `rel` first:
+
+```cpp
+#include <cstdlib>
+#include <fstream>
+#include <string>
+#include <boost/filesystem.hpp>
+#include <json/json.h>
+
+// key = "in" | "res" | "out"
+static std::string resolveFolder(const std::string &key) {
+    const char *cfg = std::getenv("FEATURE_CONFIG");
+    if (cfg == nullptr) return "";
+    std::ifstream ifs(cfg);
+    Json::Value root;
+    Json::CharReaderBuilder rb;
+    std::string errs;
+    if (!Json::parseFromStream(rb, ifs, &root, &errs)) return "";
+    const Json::Value &fp = root["folderPath"][key];
+    for (const char *which : {"rel", "abs"}) {   // rel first — abs is a host path
+        const std::string p = fp.get(which, "").asString();
+        if (!p.empty() && boost::filesystem::exists(p)
+                && boost::filesystem::is_directory(p)) return p;
+    }
+    return "";
+}
+```
+
+**The device `feature.config` is platform-generated, not yours.**
+`folderPath.res.size` is fixed by the platform (20 MB observed) regardless of
+the value packaged in the app. `saveToDisk` throws
+`… MB for Res Folder exceeds …` on overflow, and rejects 0-byte files.
+
+**Marketplace install/update leaves the app stopped.** The install/update
+`fek/notification` carries `"autoRun": false` — the app is installed but not
+running and must be started from the Cockpit, and it stays stopped across
+reboots. Install/update also **wipes the incoming folder** (the update `.fif`
+is downloaded through it); the resources folder survives.
+
+**Where to look on the CCU** (UART 115200, user `root`; `runc list`,
+`runc exec <featureId> sh`):
+
+| What | Path |
+|------|------|
+| App `NEVONEX_LOG` lines | `/userdata/nevonex/data/logs/fcl/fcal_technical.log` — `component=<featureId>`, `APP :` prefix |
+| App boot / config lines | `/userdata/nevonex/data/trans/fif/outgoing/<featureId>/logs/fcal.log` |
+| Platform download flow | `/userdata/nevonex/data/logs/fcl/technical.log` — component `FCA`: `topic from IOT - featurefiledownload`, `url:/ca/download/…`, `Feedback sent successfully for file download` |
+
 ### Common gotchas
 
 - **Register the promise BEFORE calling `uploadData`** in Pattern A. If the
@@ -533,6 +632,8 @@ FilePath resPath = FileProvider::getInstance().getResourcesFolderPath();
 > **Namespace gotcha:** the fully-qualified type is `nevonex::resource::FileProvider`. There is **no** `nevonex::fcal::resource::*` — the `fcal` in the package/header name is not mirrored in the namespace. Code that types `nevonex::fcal::resource::FileProvider` fails to compile with "no type named 'fcal' in namespace 'nevonex'".
 
 > **Warning:** C++ `FileProvider::saveToDisk` defaults `overwrite` to `false`. Omitting the second parameter causes an exception on every call after the first. Always pass `true` explicitly.
+
+> **Warning:** `getResourcesFolderPath()` — and likewise `getIncomingFolderPath()` / `getOutgoingFolderPath()` — returns the `abs` entry of `feature.config`, which on a device is a **host** path that does not exist inside the container. Only the `rel` paths do (`/app/in/`, `/app/out/`, `/nevonex/resources`). Never build your own file paths from these getters; `saveToDisk` / `retrieveFileFromDisk` resolve `rel` internally and work. To obtain a directory you can actually open, read `$FEATURE_CONFIG` — see "Receiving files pushed from the cloud (NFL)" above.
 
 **DB Lifecycle:**
 ```cpp

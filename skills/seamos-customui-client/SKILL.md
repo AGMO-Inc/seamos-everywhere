@@ -267,6 +267,18 @@ production bug.
   pending-map keyed by it. Cloud responses arrive out of order.
 - **Write paths into `location.hostname` only** — never hardcode IPs. The
   same UI bundle ships to every device.
+- **Never rely on WebSocket push alone.** The app's `/socket` endpoint holds
+  exactly ONE client (a new connection closes the previous one) and the
+  Cockpit webview drops the socket on screen changes without re-upgrading.
+  Always pair the WS with polling — React Query `refetchInterval: 5000` plus
+  `refetchIntervalInBackground: false` — and a `visibilitychange` listener
+  that refetches when the screen comes back. Treat the WS as the fast path,
+  the poll as the source of truth. See ws-protocol.md → Connection lifetime
+  on device.
+- **Keep the app's REST list endpoints cheap** — the UI polls them every few
+  seconds on every screen that shows the data. A small directory scan or an
+  indexed query is fine; avoid hashing files, full-table serialisation, or
+  blocking I/O per request, and put heavy detail behind a second route.
 
 ## Cross-references
 
