@@ -149,3 +149,37 @@ ws.addEventListener('message', ev => {
 Order matters: `external_api_response` and `publish_ack` are both
 distinguished by a unique top-level field; check those before falling
 through to the generic `topic` branch.
+
+## Connection lifetime on device
+
+> **Warning:** The generated `WebSocketEndPoint` keeps exactly **one** client.
+> A new `/socket` connection closes the previous one — a stale tab, a debug
+> probe, or a second screen silently kills the live UI. On top of that, the
+> Cockpit webview drops the socket on screen changes: the server logs
+> `WebSocket connection closed` and no re-upgrade follows. Verified
+> 2026-09-02 on a Bosch CCU AUTO-IT_RV-C1000 (NVX90 3.0.0 / FCAL runtime
+> 8.4.18). The app side is fine — `publishMessage` was confirmed working with
+> a raw WS probe on the CCU — so this is connection lifetime, not the app.
+
+Treat the WS as the *fast path*, never the only path: poll the app's REST
+routes on an interval and refetch when the screen becomes visible again.
+
+```js
+// TanStack Query
+useQuery({
+  queryKey: ['files'],
+  queryFn: fetchFiles,
+  refetchInterval: 5000,
+  refetchIntervalInBackground: false,   // don't poll a hidden webview
+})
+
+// Plain JS equivalent
+setInterval(refresh, 5000)
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') refresh()
+})
+```
+
+> **Server-side gotcha:** `publishMessage("literal")` is ambiguous between the
+> `const std::string&` and `const Json::Value&` overloads. Wrap it:
+> `publishMessage(std::string("..."))`.
