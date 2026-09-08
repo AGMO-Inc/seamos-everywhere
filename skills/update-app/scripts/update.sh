@@ -133,12 +133,19 @@ if [[ "$IS_FOR_TEST" == "true" ]]; then
   fi
 fi
 
+# curl's -F parses ';' inside an inline value as an option separator (the ';type='
+# that follows), so a ';' in --request JSON (e.g. release notes) truncates the body.
+# Write it to a temp file instead and pass its content as the field value.
+REQUEST_FILE="$(mktemp -t seamos-update-app)"
+printf '%s' "$REQUEST_JSON" > "$REQUEST_FILE"
+trap 'rm -f "$REQUEST_FILE"' EXIT
+
 # Build curl command
 CURL_ARGS=(
   curl -s -w "\n%{http_code}"
   -X POST "${BASE_URL}/v2/apps/${APP_ID}/versions"
   -H "Authorization: Bearer ${UPLOAD_TOKEN}"
-  -F "request=${REQUEST_JSON};type=application/json"
+  -F "request=<${REQUEST_FILE};type=application/json"
 )
 
 # Add app files (feuType as part name)
