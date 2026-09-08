@@ -73,12 +73,19 @@ for ((i=1; i<${#APP_FILES[@]}; i+=2)); do
   [[ -f "${APP_FILES[$i]}" ]] || { echo "Error: App file not found: ${APP_FILES[$i]}"; exit 1; }
 done
 
+# curl's -F parses ';' inside an inline value as an option separator (the ';type='
+# that follows), so a ';' in --request JSON truncates the body. Write it to a temp
+# file instead and pass its content as the field value.
+REQUEST_FILE="$(mktemp -t seamos-upload-app)"
+printf '%s' "$REQUEST_JSON" > "$REQUEST_FILE"
+trap 'rm -f "$REQUEST_FILE"' EXIT
+
 # Build curl command
 CURL_ARGS=(
   curl -s -w "\n%{http_code}"
   -X POST "${BASE_URL}/v2/apps"
   -H "Authorization: Bearer ${UPLOAD_TOKEN}"
-  -F "request=${REQUEST_JSON};type=application/json"
+  -F "request=<${REQUEST_FILE};type=application/json"
   -F "mainImage=@${MAIN_IMAGE}"
   -F "iconImage=@${ICON_IMAGE}"
 )
